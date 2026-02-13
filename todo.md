@@ -1,3 +1,0 @@
-- Launch
-- Reduce delays
-- Add Login, and Paid Plans
