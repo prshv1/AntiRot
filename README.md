@@ -3,7 +3,6 @@
 Chrome extension + Python backend that automatically blocks non valuable YouTube videos.
 
 ## How It Works
-
 - You browse YouTube normally
 - Extension detects when you open a video, extracts the URL
 - Backend extracts the transcript using supadata
@@ -15,10 +14,15 @@ Chrome extension + Python backend that automatically blocks non valuable YouTube
 
 ## How to install
 
+### For normal humans
+Go to [Chrome Webstore](https://chromewebstore.google.com/detail/anti-rot/peicgeopikaehdnnaloamfhhikikegan), and click "add to chrome"
+Yes, its that simple
+
+### For developers
 1. Clone the github repo ```git clone https://github.com/prshv1/Anti_Rot```
 2. Open Google Chrome and go to:  ```chrome://extensions```
 3. Enable Developer Mode (top-right toggle)
-4. Drag and drop the folder named "Client Side" from the repo
+4. Drag and drop the folder named "Browser Client" from the repo
 
 ## Version log
 v0.1: prototype stage
