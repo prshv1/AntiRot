@@ -1,3 +1,4 @@
-- Launch
-- Reduce delays
-- Add Login, and Paid Plans
+- Add Login
+- Paid Plans
+- Custom instructions
+- Api Credits

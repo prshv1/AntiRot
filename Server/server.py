@@ -52,7 +52,7 @@ def classify_video(transcript: str) -> int: #Send transcript to LLM, get back 0 
     }
 
     payload = {
-        "model": "amazon/nova-2-lite-v1",
+        "model": "openai/gpt-oss-120b:free",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": transcript},
