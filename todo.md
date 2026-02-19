@@ -1,4 +1,5 @@
 - Add Login
+- Add Lockdown Mode
 - Paid Plans
 - Custom instructions
 - Api Credits

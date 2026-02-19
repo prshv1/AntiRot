@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import os
 import requests
 from supadata import Supadata
+import logging
+
 
 
 # SETUP
@@ -74,6 +76,7 @@ def classify_video(transcript: str) -> int: #Send transcript to LLM, get back 0 
 # API ENDPOINTS
 @app.post("/classify", response_model=VideoResponse)
 def classify(req: VideoRequest):
+    print(f"Processing URL: {req.url}")
     transcript = get_transcript(req.url)
 
     if not transcript:
