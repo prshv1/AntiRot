@@ -7,8 +7,6 @@ import requests
 from supadata import Supadata
 import logging
 
-
-
 # SETUP
 load_dotenv()
 API_KEY = os.getenv("Openrouter_API_KEY")  # OpenRouter API key
