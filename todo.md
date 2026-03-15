@@ -1,0 +1,6 @@
+- Add Login
+- Add Lockdown Mode
+- Paid Plans
+- Custom instructions
+- Api Credits
+- Add Feature Blocking tools like unhook
