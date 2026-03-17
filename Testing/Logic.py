@@ -35,6 +35,7 @@ def Vid_Cat(Vid_Transcript):
     result = response.json()
 
     if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+        print("Falling back to mistralai/mistral-nemo")
         data["model"] = "mistralai/mistral-nemo"
         response = requests.post(url, headers=headers, json=data)
         result = response.json()

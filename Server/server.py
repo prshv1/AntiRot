@@ -68,6 +68,7 @@ def classify_video(transcript: str) -> int: #Send transcript to LLM, get back 0 
         result = response.json()
 
         if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+            print("Falling back to mistralai/mistral-nemo")
             payload["model"] = "mistralai/mistral-nemo"
             response = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
