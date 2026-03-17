@@ -33,31 +33,31 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
     const videoId = extractVideoId(videoUrl);
     if (videoId && classificationCache.has(videoId)) {
       const cached = classificationCache.get(videoId);
-      console.log('[Anti-Rot] Cache hit for', videoId, cached);
+      console.log('[AntiRot] Cache hit for', videoId, cached);
       sendResponse(cached);
       return;
     }
 
     // Call API
-    console.log('[Anti-Rot] Fetching classification from:', CLASSIFY_URL, 'for video:', videoUrl);
+    console.log('[AntiRot] Fetching classification from:', CLASSIFY_URL, 'for video:', videoUrl);
     const response = await fetch(CLASSIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: videoUrl }),
     });
 
-    console.log('[Anti-Rot] API response status:', response.status);
+    console.log('[AntiRot] API response status:', response.status);
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      console.error('[Anti-Rot] API error:', response.status, errData);
+      console.error('[AntiRot] API error:', response.status, errData);
       // On API error, default to allowing the video (fail open)
       sendResponse({ action: 'allowed', reason: 'api_error' });
       return;
     }
 
     const result = await response.json();
-    console.log('[Anti-Rot] API result:', JSON.stringify(result));
+    console.log('[AntiRot] API result:', JSON.stringify(result));
     // category: 0 = non-valuable (block), 1 = valuable (allow)
     const isValuable = result.category === 1;
 
@@ -81,7 +81,7 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
 
     sendResponse(responseData);
   } catch (err) {
-    console.error('[Anti-Rot] Classification failed:', err);
+    console.error('[AntiRot] Classification failed:', err);
     sendResponse({ action: 'allowed', reason: 'error' });
   }
 }
@@ -124,5 +124,5 @@ chrome.runtime.onInstalled.addListener(() => {
     blockedVideos: 0,
     allowedVideos: 0,
   });
-  console.log('[Anti-Rot] Extension installed, shield active.');
+  console.log('[AntiRot] Extension installed, shield active.');
 });

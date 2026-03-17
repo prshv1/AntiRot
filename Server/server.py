@@ -14,7 +14,7 @@ SYSTEM_PROMPT = os.getenv("System_Prompt")
 SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
 
 app = FastAPI(
-    title="Anti-Rot API",
+    title="AntiRot API",
     description="YouTube video classifier",
     version="0.4.1",
 )

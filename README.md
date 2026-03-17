@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧠 Anti-Rot
+# 🧠 AntiRot
 
 **Stop doomscrolling. Start learning.**
 
@@ -16,7 +16,7 @@ A Chrome extension + Python backend that automatically blocks non-valuable YouTu
 
 ## ⚡ How It Works
 
-> Browse YouTube like you normally do — Anti-Rot works silently in the background.
+> Browse YouTube like you normally do — AntiRot works silently in the background.
 
 | Step | What Happens |
 |:----:|:-------------|
@@ -66,7 +66,7 @@ flowchart TD
 ## 📂 Project Structure
 
 ```
-Anti-Rot/
+AntiRot/
 ├── 🧩 Browser Client/        # Chrome extension source
 │   ├── manifest.json          # Extension manifest (v3)
 │   ├── background.js          # Service worker
