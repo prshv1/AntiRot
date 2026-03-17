@@ -25,14 +25,19 @@ def Vid_Cat(Vid_Transcript):
     data = {
         "model": "openai/gpt-oss-120b:free",   # change to any model you want
         "messages": [
-        {"role": "system", "content": System_Prompt},
-        {"role": "user", "content": Vid_Transcript}
-    ]
+            {"role": "system", "content": System_Prompt},
+            {"role": "user", "content": Vid_Transcript}
+        ]
     }
 
     #Response parsing & output
     response = requests.post(url, headers=headers, json=data)
     result = response.json()
+
+    if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+        data["model"] = "mistralai/mistral-nemo"
+        response = requests.post(url, headers=headers, json=data)
+        result = response.json()
     
     return(result["choices"][0]["message"]["content"])
     

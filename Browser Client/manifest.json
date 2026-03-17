@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
-    "https://anti-rot-341863309794.us-central1.run.app/*"
+    "https://anti-rot-332539693864.us-central1.run.app/*"
   ],
   "background": {
     "service_worker": "background.js"

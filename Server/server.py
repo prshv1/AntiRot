@@ -66,6 +66,22 @@ def classify_video(transcript: str) -> int: #Send transcript to LLM, get back 0 
             json=payload,
         )
         result = response.json()
+
+        if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+            payload["model"] = "mistralai/mistral-nemo"
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            result = response.json()
+
+        if "error" in result:
+            error_msg = result["error"].get("message", str(result["error"]))
+            if "metadata" in result["error"] and "raw" in result["error"]["metadata"]:
+                error_msg += f" - {result['error']['metadata']['raw']}"
+            raise Exception(f"OpenRouter API error: {error_msg}")
+            
         raw = result["choices"][0]["message"]["content"].strip()
         return int(raw)
     except Exception as e:

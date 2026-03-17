@@ -3,7 +3,7 @@ video_url = input("Paste YouTube URL: ")
 payload = {"url": video_url}
 
 #change this to your GCP URL once deployed
-response = requests.post("https://anti-rot-341863309794.us-central1.run.app/classify", json=payload)
+response = requests.post("https://anti-rot-332539693864.us-central1.run.app/classify", json=payload)
 
 # 4. Print EVERYTHING — no parsing, raw response
 print("\n--- RAW RESPONSE ---")

@@ -1,5 +1,4 @@
-// ── Config ──
-const API_BASE = 'https://anti-rot-341863309794.us-central1.run.app';
+const API_BASE = 'https://anti-rot-332539693864.us-central1.run.app';
 const CLASSIFY_URL = `${API_BASE}/classify`;
 
 // Cache to avoid re-classifying the same video
@@ -34,16 +33,20 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
     const videoId = extractVideoId(videoUrl);
     if (videoId && classificationCache.has(videoId)) {
       const cached = classificationCache.get(videoId);
+      console.log('[Anti-Rot] Cache hit for', videoId, cached);
       sendResponse(cached);
       return;
     }
 
     // Call API
+    console.log('[Anti-Rot] Fetching classification from:', CLASSIFY_URL, 'for video:', videoUrl);
     const response = await fetch(CLASSIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: videoUrl }),
     });
+
+    console.log('[Anti-Rot] API response status:', response.status);
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
@@ -54,6 +57,7 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
     }
 
     const result = await response.json();
+    console.log('[Anti-Rot] API result:', JSON.stringify(result));
     // category: 0 = non-valuable (block), 1 = valuable (allow)
     const isValuable = result.category === 1;
 

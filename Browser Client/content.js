@@ -100,6 +100,7 @@ async function processVideo() {
 
   // Show loading state
   showLoading();
+  console.log('[Anti-Rot] Classifying video:', window.location.href);
 
   // Send to background for classification
   try {
@@ -108,11 +109,22 @@ async function processVideo() {
       url: window.location.href,
     });
 
+    console.log('[Anti-Rot] Classification response:', JSON.stringify(response));
+
+    if (!response) {
+      console.error('[Anti-Rot] No response from background script — service worker may be inactive.');
+      removeLoading();
+      isProcessing = false;
+      return;
+    }
+
     removeLoading();
 
     if (response.action === 'blocked') {
+      console.log('[Anti-Rot] Video BLOCKED.');
       showBlockOverlay();
     } else {
+      console.log(`[Anti-Rot] Video allowed (reason: ${response.reason || 'classified_ok'}).`);
       cleanup();
     }
   } catch (err) {
@@ -162,8 +174,12 @@ function showLoading() {
 
 function removeLoading() {
   if (loadingElement) {
-    loadingElement.remove();
+    loadingElement.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+    loadingElement.style.opacity = '0';
+    loadingElement.style.transform = 'translateY(-8px)';
+    const el = loadingElement;
     loadingElement = null;
+    setTimeout(() => el.remove(), 250);
   }
 }
 
