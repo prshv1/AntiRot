@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Anti-Rot",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "AI-powered YouTube blocker that filters out time-wasting videos.",
   "permissions": [
     "storage",

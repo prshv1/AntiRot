@@ -7,7 +7,7 @@
 A Chrome extension + Python backend that automatically blocks non-valuable YouTube videos — so you only watch what actually matters.
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/anti-rot/peicgeopikaehdnnaloamfhhikikegan)
-[![Version](https://img.shields.io/badge/Version-Beta_0.4-FF6B6B?style=for-the-badge)](#version-log)
+[![Version](https://img.shields.io/badge/Version-Beta_0.4.1-FF6B6B?style=for-the-badge)](#version-log)
 [![Made with Love](https://img.shields.io/badge/Made_with-Love-E91E63?style=for-the-badge)](#)
 
 </div>
@@ -93,6 +93,7 @@ Anti-Rot/
 | `v0.2` | ☁️ Deployed backend on cloud servers |
 | `v0.3` | 🔄 Switched from yt-dlp to Supadata for transcripts |
 | `v0.4` | 🚀 Completed client-side software — ready for beta shipping |
+| `v0.4.1` | 🌍 Public release — open-sourced the repository |
 
 ---
 
@@ -129,7 +130,7 @@ Anti-Rot/
 
 ---
 
-**Version:** Beta 0.4 · **Stage:** Prototype
+**Version:** Beta 0.4.1 · **Stage:** Prototype
 
 Made with ❤️ by [@prshv1](https://linktr.ee/prshv1)
 

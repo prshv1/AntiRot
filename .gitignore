@@ -1,3 +1,21 @@
+# Environment files (API keys, secrets)
+.env
+
+# macOS system files
+.DS_Store
+
+# Video files
 Antirot_Explained.mp4
 Antirot_Tut.mp4
 Antirot.mp4
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/

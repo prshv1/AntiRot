@@ -16,7 +16,7 @@ SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
 app = FastAPI(
     title="Anti-Rot API",
     description="YouTube video classifier",
-    version="0.2.0",
+    version="0.4.1",
 )
 
 app.add_middleware(
