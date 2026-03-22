@@ -1,73 +1,113 @@
+import os
+import time
 import requests
 from dotenv import load_dotenv
-import os
-from supadata import Supadata, SupadataError
-import time
+from supadata import Supadata
 
-#Openrouter Credentials
-start = time.perf_counter()
+# SETUP
+t_total_start = time.time()
+
+print("\n[INIT] Loading environment variables...")
+t0 = time.time()
 load_dotenv()
-url = "https://openrouter.ai/api/v1/chat/completions"
-Openrouter_API_KEY = os.getenv("Openrouter_API_KEY")
-System_Prompt = os.getenv("System_Prompt")
-Supadata_API_KEY=os.getenv("Supadata_API_KEY")
-end = time.perf_counter()
-print("load_credentials:", end-start)
+API_KEY          = os.getenv("Openrouter_API_KEY")
+SYSTEM_PROMPT    = os.getenv("System_Prompt")
+SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
+print(f"[INIT] Done — {time.time() - t0:.3f}s")
 
-def Vid_Cat(Vid_Transcript):    
-    
-    #API Request
-    headers = {
-        "Authorization": f"Bearer {Openrouter_API_KEY}",
-        "Content-Type": "application/json"
-    }
+# STEP 1 — Get URL from user
+video_url = input("\nPaste YouTube URL: ").strip()
 
-    data = {
-        "model": "openai/gpt-oss-120b:free",   # change to any model you want
-        "messages": [
-            {"role": "system", "content": System_Prompt},
-            {"role": "user", "content": Vid_Transcript}
-        ]
-    }
+# STEP 2 — Fetch transcript via Supadata
+print(f"\n[TRANSCRIPT] Fetching transcript for: {video_url}")
+t0 = time.time()
 
-    #Response parsing & output
-    response = requests.post(url, headers=headers, json=data)
-    result = response.json()
+try:
+    supadata  = Supadata(api_key=SUPADATA_API_KEY)
+    transcript_obj = supadata.transcript(url=video_url, text=True, mode="auto")
+    transcript = transcript_obj.content
+    elapsed = time.time() - t0
+    print(f"[TRANSCRIPT] Success — {elapsed:.3f}s")
+    print(f"[TRANSCRIPT] Length: {len(transcript)} characters")
+except Exception as e:
+    print(f"[TRANSCRIPT] FAILED after {time.time() - t0:.3f}s — {e}")
+    raise SystemExit(1)
 
-    if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
-        print("Falling back to mistralai/mistral-nemo")
-        data["model"] = "mistralai/mistral-nemo"
-        response = requests.post(url, headers=headers, json=data)
-        result = response.json()
-    
-    return(result["choices"][0]["message"]["content"])
-    
-def Get_Transcript(Vid_URL):
+if not transcript:
+    print("[TRANSCRIPT] ERROR — No English transcript found for this video.")
+    raise SystemExit(1)
 
-    # Initialize the client
-    supadata = Supadata(api_key=Supadata_API_KEY)
+# STEP 3 — Classify via LLM (OpenRouter)
+PRIMARY_MODEL  = "openai/gpt-oss-120b:free"
+FALLBACK_MODEL = "mistralai/mistral-nemo"
 
-    # Get transcript from any supported platform (YouTube, TikTok, Instagram, X (Twitter), file URLs)
-    transcript = supadata.transcript(
-        url=Vid_URL,
-        text=True,  #return plain text instead of timestamped chunks
-        mode="auto"
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
+}
+
+payload = {
+    "model": PRIMARY_MODEL,
+    "messages": [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",   "content": transcript},
+    ],
+}
+
+print(f"\n[LLM] Sending transcript to model: {PRIMARY_MODEL}")
+t0 = time.time()
+
+try:
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers,
+        json=payload,
     )
-    
-    return(transcript.content)
+    result = response.json()
+    elapsed = time.time() - t0
+    print(f"[LLM] Primary model response received — {elapsed:.3f}s")
 
-Vid_URL=input("Enter Video URL:")
+    # ── Fallback if primary fails ──────────────────────────────────────────
+    if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+        print(f"[LLM] Primary model failed. Reason: {result.get('error', 'no choices returned')}")
+        print(f"[LLM] Falling back to: {FALLBACK_MODEL}")
+        payload["model"] = FALLBACK_MODEL
 
-#Get Transcript
-start = time.perf_counter()
-Vid_Transcript=Get_Transcript(Vid_URL)
-end = time.perf_counter()
-print("\n Supadata API:", end-start)
+        t0 = time.time()
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+        )
+        result = response.json()
+        elapsed = time.time() - t0
+        print(f"[LLM] Fallback model response received — {elapsed:.3f}s")
 
-#Get Category
-start = time.perf_counter()
-Vid_Category = Vid_Cat(Vid_Transcript)
-end = time.perf_counter()
-print("\n OpenROUTER API:", end-start)
+    # ── Hard error check ───────────────────────────────────────────────────
+    if "error" in result:
+        error_msg = result["error"].get("message", str(result["error"]))
+        if "metadata" in result["error"] and "raw" in result["error"]["metadata"]:
+            error_msg += f" | raw: {result['error']['metadata']['raw']}"
+        print(f"[LLM] FAILED — {error_msg}")
+        raise SystemExit(1)
 
-print (Vid_Category)
+    # ── Parse result ───────────────────────────────────────────────────────
+    t0 = time.time()
+    raw = result["choices"][0]["message"]["content"].strip()
+    category = int(raw)
+    print(f"[LLM] Parsed category: {category} — {time.time() - t0:.3f}s")
+
+except Exception as e:
+    print(f"[LLM] Exception — {e}")
+    raise SystemExit(1)
+
+# ─────────────────────────────────────────────
+# FINAL OUTPUT
+# ─────────────────────────────────────────────
+total_elapsed = time.time() - t_total_start
+
+print("\n" + "─" * 40)
+print(f"  RESULT  →  category: {category}")
+print("─" * 40)
+print(f"  Total time: {total_elapsed:.3f}s")
+print("─" * 40 + "\n")
