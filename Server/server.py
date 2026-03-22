@@ -6,7 +6,6 @@ import os
 import requests
 from supadata import Supadata
 import logging
-import traceback
 
 # SETUP
 load_dotenv()
@@ -15,9 +14,9 @@ SYSTEM_PROMPT = os.getenv("System_Prompt")
 SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
 
 app = FastAPI(
-    title="Anti-Rot API",
+    title="AntiRot API",
     description="YouTube video classifier",
-    version="0.2.0",
+    version="0.4.1",
 )
 
 app.add_middleware(
@@ -67,19 +66,27 @@ def classify_video(transcript: str) -> int: #Send transcript to LLM, get back 0 
             json=payload,
         )
         result = response.json()
-        print(f"OpenRouter status: {response.status_code}")
-        print(f"OpenRouter response: {result}")  # THIS is what you need to see
 
-        if "choices" not in result:
-            raise HTTPException(status_code=500, detail=f"LLM bad response: {result}")
+        if "error" in result or "choices" not in result or len(result.get("choices", [])) == 0:
+            print("Falling back to mistralai/mistral-nemo")
+            payload["model"] = "mistralai/mistral-nemo"
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            result = response.json()
 
+        if "error" in result:
+            error_msg = result["error"].get("message", str(result["error"]))
+            if "metadata" in result["error"] and "raw" in result["error"]["metadata"]:
+                error_msg += f" - {result['error']['metadata']['raw']}"
+            raise Exception(f"OpenRouter API error: {error_msg}")
+            
         raw = result["choices"][0]["message"]["content"].strip()
         return int(raw)
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"FULL ERROR: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"LLM classification failed: {str(e)}")    
+        raise HTTPException(status_code=500, detail=f"LLM classification failed: {str(e)}")
 
 # API ENDPOINTS
 @app.post("/classify", response_model=VideoResponse)

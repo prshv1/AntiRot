@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Anti-Rot",
-  "version": "0.3.1",
+  "name": "AntiRot",
+  "version": "0.4.1",
   "description": "AI-powered YouTube blocker that filters out time-wasting videos.",
   "permissions": [
     "storage",
@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
-    "https://anti-rot-341863309794.us-central1.run.app/*"
+    "https://anti-rot-332539693864.us-central1.run.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -25,7 +25,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Anti-Rot"
+    "default_title": "AntiRot"
   },
   "icons": {
     "16": "icons/icon16.png",

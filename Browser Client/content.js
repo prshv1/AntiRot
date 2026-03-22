@@ -92,7 +92,7 @@ async function processVideo() {
   if (channelName) {
     const whitelisted = await isChannelWhitelisted(channelName);
     if (whitelisted) {
-      console.log(`[Anti-Rot] Channel "${channelName}" is whitelisted. Skipping.`);
+      console.log(`[AntiRot] Channel "${channelName}" is whitelisted. Skipping.`);
       isProcessing = false;
       return;
     }
@@ -100,6 +100,7 @@ async function processVideo() {
 
   // Show loading state
   showLoading();
+  console.log('[AntiRot] Classifying video:', window.location.href);
 
   // Send to background for classification
   try {
@@ -108,15 +109,26 @@ async function processVideo() {
       url: window.location.href,
     });
 
+    console.log('[AntiRot] Classification response:', JSON.stringify(response));
+
+    if (!response) {
+      console.error('[AntiRot] No response from background script — service worker may be inactive.');
+      removeLoading();
+      isProcessing = false;
+      return;
+    }
+
     removeLoading();
 
     if (response.action === 'blocked') {
+      console.log('[AntiRot] Video BLOCKED.');
       showBlockOverlay();
     } else {
+      console.log(`[AntiRot] Video allowed (reason: ${response.reason || 'classified_ok'}).`);
       cleanup();
     }
   } catch (err) {
-    console.error('[Anti-Rot] Message error:', err);
+    console.error('[AntiRot] Message error:', err);
     removeLoading();
   }
 
@@ -162,8 +174,12 @@ function showLoading() {
 
 function removeLoading() {
   if (loadingElement) {
-    loadingElement.remove();
+    loadingElement.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+    loadingElement.style.opacity = '0';
+    loadingElement.style.transform = 'translateY(-8px)';
+    const el = loadingElement;
     loadingElement = null;
+    setTimeout(() => el.remove(), 250);
   }
 }
 
@@ -184,7 +200,7 @@ function showBlockOverlay() {
         </svg>
       </div>
       <h1 class="antirot-title">Time is Valuable</h1>
-      <p class="antirot-subtitle">Anti-Rot blocked this video because it doesn't align with your goals.</p>
+      <p class="antirot-subtitle">AntiRot blocked this video because it doesn't align with your goals.</p>
       <p class="antirot-quote" id="antirot-quote"></p>
       <div class="antirot-actions">
         <button id="antirot-goback" class="antirot-btn antirot-btn-primary">← Go Back</button>
