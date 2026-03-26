@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=env_path)
 SERVER_URL = os.getenv("SERVER_URL")
 
 if not SERVER_URL:
-    raise ValueError("SERVER_URL not found in server/.env")
+    raise ValueError("SERVER_URL not found in Server/.env")
 
 video_url = input("Enter YouTube video URL: ").strip()
 user_instructions = input("Enter custom instructions: ").strip()

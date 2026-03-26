@@ -52,7 +52,7 @@ def get_transcript(video_url: str) -> str:
 
 def classify_video(transcript: str, instructions: Optional[str] = None) -> int:
     system_prompt = (
-        f"{SYSTEM_PROMPT}{instructions}" if instructions else SYSTEM_PROMPT
+        f"{SYSTEM_PROMPT} USER INSTRUCTIONS: {instructions}" if instructions else SYSTEM_PROMPT
     )
 
     headers = {
