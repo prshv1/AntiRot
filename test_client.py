@@ -1,6 +1,8 @@
 import requests
+import json
 video_url = input("Paste YouTube URL: ")
-payload = {"url": video_url}
+payload = {"url": video_url,
+           "instructions": input("enter custom instructions (optional):")}
 
 #change this to your GCP URL once deployed
 response = requests.post("https://anti-rot-332539693864.us-central1.run.app/classify", json=payload)
