@@ -12,11 +12,7 @@
     <div class="header">
       <div class="logo-row">
         <div class="logo-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
-            <line x1="12" y1="22" x2="12" y2="15.5"/>
-            <polyline points="22 8.5 12 15.5 2 8.5"/>
-          </svg>
+          <img src="icons/icon48.png" alt="AntiRot" class="logo-img">
         </div>
         <span class="logo-text">AntiRot</span>
         <button id="themeToggle" class="theme-toggle" title="Toggle theme">
@@ -38,7 +34,6 @@
           </svg>
         </button>
       </div>
-      <p class="tagline">guard your attention</p>
     </div>
 
     <!-- Divider -->
@@ -100,6 +95,29 @@
       </div>
 
       <p class="whitelist-hint" id="emptyHint">No channels whitelisted yet</p>
+    </div>
+
+    <!-- Divider -->
+    <div class="divider"></div>
+
+    <!-- Custom Instructions Section -->
+    <div class="instructions-section">
+      <div class="instructions-header">
+        <span class="instructions-title">Custom Instructions</span>
+        <button id="saveInstructionsBtn" class="save-instructions-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Save
+        </button>
+      </div>
+      <textarea
+        id="instructionsInput"
+        class="instructions-textarea"
+        placeholder="e.g. Block all gaming videos, allow coding tutorials..."
+        spellcheck="false"
+        rows="3"
+      ></textarea>
     </div>
 
     <!-- Footer -->

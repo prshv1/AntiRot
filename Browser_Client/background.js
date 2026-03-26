@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleClassification(videoUrl, tabId, sendResponse) {
   try {
     // Check if extension is enabled
-    const data = await getStorage(['enabled']);
+    const data = await getStorage(['enabled', 'customInstructions']);
     if (data.enabled === false) {
       sendResponse({ action: 'allowed', reason: 'extension_disabled' });
       return;
@@ -38,12 +38,15 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
       return;
     }
 
+    // Get custom instructions (default to empty string)
+    const userInstructions = data.customInstructions || '';
+
     // Call API
     console.log('[AntiRot] Fetching classification from:', CLASSIFY_URL, 'for video:', videoUrl);
     const response = await fetch(CLASSIFY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: videoUrl }),
+      body: JSON.stringify({ url: videoUrl, instructions: userInstructions }),
     });
 
     console.log('[AntiRot] API response status:', response.status);
@@ -123,6 +126,7 @@ chrome.runtime.onInstalled.addListener(() => {
     whitelist: [],
     blockedVideos: 0,
     allowedVideos: 0,
+    customInstructions: '',
   });
   console.log('[AntiRot] Extension installed, shield active.');
 });

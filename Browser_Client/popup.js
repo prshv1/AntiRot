@@ -9,6 +9,8 @@ const whitelistContainer = document.getElementById('whitelistContainer');
 const whitelistCount = document.getElementById('whitelistCount');
 const emptyHint = document.getElementById('emptyHint');
 const themeToggle = document.getElementById('themeToggle');
+const instructionsInput = document.getElementById('instructionsInput');
+const saveInstructionsBtn = document.getElementById('saveInstructionsBtn');
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStats();
   loadWhitelist();
   loadTheme();
+  loadInstructions();
 });
 
 // ── Toggle Logic ──
@@ -166,6 +169,32 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+
+// ── Custom Instructions ──
+function loadInstructions() {
+  chrome.storage.local.get(['customInstructions'], (data) => {
+    instructionsInput.value = data.customInstructions || '';
+  });
+}
+
+saveInstructionsBtn.addEventListener('click', () => {
+  const instructions = instructionsInput.value.trim();
+  chrome.storage.local.set({ customInstructions: instructions }, () => {
+    // Visual feedback
+    const originalText = saveInstructionsBtn.innerHTML;
+    saveInstructionsBtn.classList.add('saved');
+    saveInstructionsBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      Saved!
+    `;
+    setTimeout(() => {
+      saveInstructionsBtn.classList.remove('saved');
+      saveInstructionsBtn.innerHTML = originalText;
+    }, 1500);
+  });
+});
 
 // ── Theme Toggle ──
 function loadTheme() {
