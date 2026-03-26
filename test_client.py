@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 # Load .env from Server/.env relative to this script
-env_path = Path(__file__).parent / "server" / ".env"
+env_path = Path(__file__).parent / "Server" / ".env"
 load_dotenv(dotenv_path=env_path)
 
 SERVER_URL = os.getenv("SERVER_URL")
