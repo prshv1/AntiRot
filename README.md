@@ -4,8 +4,8 @@
 
 **Stop doomscrolling. Start learning.**
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/anti-rot/peicgeopikaehdnnaloamfhhikikegan)
-[![Version](https://img.shields.io/badge/Version-beta_0.4-FF6B6B?style=for-the-badge)](#version-log)
+[![Install](https://img.shields.io/badge/Install-antirot.in-FF6B6B?style=for-the-badge&logo=googlechrome&logoColor=white)](https://antirot.in)
+[![Version](https://img.shields.io/badge/Version-0.5.0-FF6B6B?style=for-the-badge)](#version-log)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 
@@ -21,17 +21,16 @@
 
 ```
 Anti-Rot/
-├── Browser Client/             ← Chrome Extension (Manifest V3)
+├── Browser_Client/             ← Chrome Extension (Manifest V3)
 ├── Server/                     ← FastAPI REST Server + Docker
-├── Promotions/                 ← Marketing assets
-└── Testing/                    ← Test suite
+└── test_client.py              ← Local API test script
 ```
 
 The system operates as a real-time proxy intercepting YouTube navigation events:
 
 1. **Client Intercept**: The Chrome extension detects a YouTube video URL via background service workers.
-2. **Transcript Retrieval**: The URL is forwarded to the FastAPI server, which calls the Supadata API to extract the full video transcript. 
-3. **LLM Classification**: The transcript is passed to an OpenRouter LLM endpoint for binary evaluation (Value vs. Distraction).
+2. **Transcript Retrieval**: The URL is forwarded to the FastAPI server, which calls the Supadata API to extract the full video transcript.
+3. **LLM Classification**: The transcript and any custom user instructions are passed to an OpenRouter LLM endpoint for binary evaluation (Value vs. Distraction).
 4. **Client Enforcement**: The extension reads the API response. If flagged as non-valuable, the DOM is injected with a blocking overlay. Otherwise, navigation proceeds uninterrupted.
 
 ---
@@ -43,8 +42,11 @@ The core value proposition relies on strict, fast, and deterministic transcript 
 ### Prompt Design
 The prompt utilizes a zero-shot, binary classification approach. The system prompt forces the LLM to act strictly as a binary router: it must output `1` if the content is educational, informational, skill-building, or productivity-related, and `0` for anything else. The prompt explicitly forbids explanations, punctuation, or preamble to ensure exact integer parsing on the backend.
 
+### Custom Instructions
+Users can write custom instructions directly in the browser extension popup. These instructions are appended to the system prompt at classification time, giving the LLM absolute overrides. For example: *"Allow rickrolls"* or *"Block all gaming content even if educational."* Custom instructions take priority over the default classification rules.
+
 ### Model Choice
-The pipeline utilizes `openai/gpt-oss-120b:free` via OpenRouter. This choice optimizes for low-latency inference and zero API cost while retaining the necessary parameter depth to accurately classify complex context boundaries from unstructured transcript data.
+The pipeline utilizes `openai/gpt-oss-120b:free` via OpenRouter, with an automatic fallback to `mistralai/mistral-nemo`. This optimizes for low-latency inference and zero API cost while retaining the necessary parameter depth to accurately classify complex context boundaries from unstructured transcript data.
 
 ### Edge Case Handling
 The system implements a **fail-open** design pattern to maintain a frictionless user experience:
@@ -55,6 +57,10 @@ The system implements a **fail-open** design pattern to maintain a frictionless 
 ---
 
 ## Quick Start
+
+### Install the Extension
+
+Visit **[antirot.in](https://antirot.in)** to install the browser extension.
 
 ### Backend Server (FastAPI)
 
@@ -69,12 +75,12 @@ cp .env.example .env
 uvicorn server:app --reload --port 8000
 ```
 
-### Browser Extension
+### Load Extension Locally (Developer Mode)
 
 1. Navigate to `chrome://extensions/`
 2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select the `Browser Client/` directory
+4. Select the `Browser_Client/` directory
 
 ---
 
@@ -83,7 +89,7 @@ uvicorn server:app --reload --port 8000
 | Method | Path | Input | Output | Description |
 |--------|------|-------|--------|-------------|
 | `GET` | `/health` | — | `{"status": "alive"}` | Health check |
-| `POST` | `/classify` | JSON: `{"url": "..."}` | JSON: `{"category": 0/1}` | Executes the classification pipeline |
+| `POST` | `/classify` | JSON: `{"url": "...", "instructions": "..."}` | JSON: `{"category": 0/1}` | Executes the classification pipeline |
 
 ---
 
@@ -95,6 +101,26 @@ uvicorn server:app --reload --port 8000
 | `v0.2` | Backend deployment to cloud infrastructure |
 | `v0.3` | Migrated extraction dependency from yt-dlp to Supadata API |
 | `v0.4` | Completed client extension and stability patches for pre-beta release |
+| `v0.5` | Custom instructions — users can now write per-session override rules directly in the extension popup |
+
+---
+
+## Upcoming Features
+
+- Login & user accounts
+- Lockdown mode
+- Paid plans & API credits
+- Feature blocking tools (e.g. unhook-style sidebar removal)
+
+---
+
+## Tech Stack
+
+- **Backend:** Python 3.11, FastAPI, Uvicorn
+- **AI / LLM:** OpenRouter (`gpt-oss-120b`, `mistral-nemo`)
+- **Transcript Extraction:** Supadata API
+- **Browser Extension:** Chrome Manifest V3 (Vanilla JS)
+- **Deployment:** Docker, Google Cloud Run
 
 ---
 
@@ -102,18 +128,19 @@ uvicorn server:app --reload --port 8000
 
 ```
 Anti-Rot/
-├── Browser Client/
+├── Browser_Client/
 │   ├── manifest.json          # Extension manifest (v3)
 │   ├── background.js          # Service worker and caching layer
 │   ├── content.js             # Content script for DOM manipulation
 │   ├── content.css            # Overlay injection styles
-│   └── popup.html / .js       # Extension UI
+│   ├── popup.html / .js / .css  # Extension UI (toggle, whitelist, custom instructions)
+│   └── icons/                 # Extension icons
 ├── Server/
 │   ├── server.py              # FastAPI application and LLM pipeline
 │   ├── Dockerfile             # Production container definition
 │   ├── requirements.txt       # Python dependencies
-│   └── .env.example           # Environment template
-├── Promotions/
-├── Testing/
+│   ├── .env.example           # Environment template
+│   └── .env                   # Local secrets (gitignored)
+├── test_client.py             # Local API test script
 └── README.md
 ```
