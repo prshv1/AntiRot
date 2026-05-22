@@ -89,7 +89,12 @@ uvicorn server:app --reload --port 8000
 | Method | Path | Input | Output | Description |
 |--------|------|-------|--------|-------------|
 | `GET` | `/health` | — | `{"status": "alive"}` | Health check |
-| `POST` | `/classify` | JSON: `{"url": "...", "instructions": "..."}` | JSON: `{"category": 0/1}` | Executes the classification pipeline |
+| `POST` | `/installs/register` | JSON: `{"requested_install_id": "...", "client": {...}}` | JSON: `{"install_id": "...", "install_token": "..."}` | Creates a server-issued install credential pair; can attach a token to an older local install ID during migration |
+| `POST` | `/classify` | JSON: `{"url": "...", "instructions": "...", "install_id": "...", "install_token": "..."}` | JSON: `{"category": 0/1}` | Verifies install credentials, executes classification, and writes a tracking event |
+
+Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted `install_id` and `install_token` match before running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`. Request tracking is logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event includes request metadata, client IP/proxy headers, URL, instructions, install ID, install token hash, YouTube video ID, Supadata/OpenRouter timings, result category, and failure details. Raw install tokens and account identifiers are not logged.
+
+The request log is append-only: every event is added as one JSON object line to the same `api_call_events.jsonl` file. For larger logs, use `python Server/tools/request_log_summary.py` for a streaming summary or `python Server/tools/request_log_to_sqlite.py` to import the log into `data/api_request_events.sqlite3` for SQL queries and cache analysis.
 
 ---
 
@@ -108,9 +113,8 @@ uvicorn server:app --reload --port 8000
 
 ## Upcoming Features
 
-- Login & user accounts
 - Lockdown mode
-- Paid plans & API credits
+- Supadata transcript caching
 
 ---
 

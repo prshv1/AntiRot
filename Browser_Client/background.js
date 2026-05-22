@@ -1,5 +1,6 @@
-const API_BASE = 'https://anti-rot-332539693864.us-central1.run.app';
+const API_BASE = 'https://api.antirot.in';
 const CLASSIFY_URL = `${API_BASE}/classify`;
+const REGISTER_INSTALL_URL = `${API_BASE}/installs/register`;
 const DEFAULT_FOCUS_SETTINGS = {
   hideHomeFeed: false,
   redirectHomeToSubscriptions: false,
@@ -56,7 +57,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleClassification(videoUrl, tabId, sendResponse) {
   try {
     // Check if extension is enabled
-    const data = await getStorage(['enabled', 'customInstructions']);
+    const data = await getStorage([
+      'enabled',
+      'customInstructions',
+      'installId',
+      'installToken',
+    ]);
     if (data.enabled === false) {
       sendResponse({ action: 'allowed', reason: 'extension_disabled' });
       return;
@@ -73,14 +79,21 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
 
     // Get custom instructions (default to empty string)
     const userInstructions = data.customInstructions || '';
+    let installCredentials = await getOrCreateInstallCredentials(
+      data.installId,
+      data.installToken
+    );
 
     // Call API
     console.log('[AntiRot] Fetching classification from:', CLASSIFY_URL, 'for video:', videoUrl);
-    const response = await fetch(CLASSIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: videoUrl, instructions: userInstructions }),
-    });
+    let response = await requestClassification(videoUrl, userInstructions, installCredentials);
+
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      console.warn('[AntiRot] Install credentials rejected. Registering a fresh install token.');
+      await removeStorage(['installId', 'installToken']);
+      installCredentials = await registerInstall();
+      response = await requestClassification(videoUrl, userInstructions, installCredentials);
+    }
 
     console.log('[AntiRot] API response status:', response.status);
 
@@ -152,16 +165,146 @@ function setStorage(data) {
   });
 }
 
-// ── Install Handler ──
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({
-    enabled: true,
-    whitelist: [],
-    blockedVideos: 0,
-    allowedVideos: 0,
-    customInstructions: '',
-    focusSettings: DEFAULT_FOCUS_SETTINGS,
-    collapsedSections: DEFAULT_COLLAPSED_SECTIONS,
+function removeStorage(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.remove(keys, resolve);
   });
+}
+
+async function getOrCreateInstallCredentials(existingInstallId, existingInstallToken) {
+  if (existingInstallId && existingInstallToken) {
+    return {
+      installId: existingInstallId,
+      installToken: existingInstallToken,
+    };
+  }
+
+  return registerInstall(existingInstallId);
+}
+
+async function registerInstall(existingInstallId = null) {
+  const response = await fetch(REGISTER_INSTALL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requested_install_id: existingInstallId || null,
+      client: getClientMetadata(),
+    }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(`Install registration failed: ${response.status} ${JSON.stringify(errData)}`);
+  }
+
+  const credentials = await response.json();
+  if (!credentials.install_id || !credentials.install_token) {
+    throw new Error('Install registration response was missing credentials.');
+  }
+
+  await setStorage({
+    installId: credentials.install_id,
+    installToken: credentials.install_token,
+  });
+
+  return {
+    installId: credentials.install_id,
+    installToken: credentials.install_token,
+  };
+}
+
+function requestClassification(videoUrl, userInstructions, installCredentials) {
+  return fetch(CLASSIFY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: videoUrl,
+      instructions: userInstructions,
+      install_id: installCredentials.installId,
+      install_token: installCredentials.installToken,
+      client: getClientMetadata(),
+    }),
+  });
+}
+
+function getClientMetadata() {
+  const manifest = chrome.runtime.getManifest();
+  const nav = globalThis.navigator || {};
+
+  return {
+    extension_version: manifest.version,
+    extension_name: manifest.name,
+    api_base: API_BASE,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    language: nav.language || null,
+    platform: nav.platform || null,
+    user_agent: nav.userAgent || null,
+  };
+}
+
+// ── Install Handler ──
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  const existing = await getStorage([
+    'installId',
+    'installToken',
+    'enabled',
+    'whitelist',
+    'blockedVideos',
+    'allowedVideos',
+    'customInstructions',
+    'focusSettings',
+    'collapsedSections',
+  ]);
+  let installCredentials = null;
+
+  try {
+    installCredentials = await getOrCreateInstallCredentials(
+      existing.installId,
+      existing.installToken
+    );
+  } catch (err) {
+    console.warn('[AntiRot] Install registration will retry on first classification.', err);
+  }
+
+  if (reason === 'install') {
+    await setStorage({
+      enabled: true,
+      whitelist: [],
+      blockedVideos: 0,
+      allowedVideos: 0,
+      customInstructions: '',
+      focusSettings: DEFAULT_FOCUS_SETTINGS,
+      collapsedSections: DEFAULT_COLLAPSED_SECTIONS,
+      ...(installCredentials
+        ? {
+            installId: installCredentials.installId,
+            installToken: installCredentials.installToken,
+          }
+        : {}),
+    });
+  } else {
+    await setStorage({
+      ...(installCredentials
+        ? {
+            installId: installCredentials.installId,
+            installToken: installCredentials.installToken,
+          }
+        : {}),
+      enabled: existing.enabled !== undefined ? existing.enabled : true,
+      whitelist: existing.whitelist || [],
+      blockedVideos: existing.blockedVideos || 0,
+      allowedVideos: existing.allowedVideos || 0,
+      customInstructions: existing.customInstructions || '',
+      focusSettings: {
+        ...DEFAULT_FOCUS_SETTINGS,
+        ...(existing.focusSettings || {}),
+      },
+      collapsedSections: {
+        ...DEFAULT_COLLAPSED_SECTIONS,
+        ...(existing.collapsedSections || {}),
+      },
+    });
+  }
+
   console.log('[AntiRot] Extension installed, shield active.');
 });

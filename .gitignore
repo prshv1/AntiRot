@@ -45,3 +45,5 @@ wheels/
 
 # Logs
 *.log
+Server/data/
+*.sqlite3

@@ -7,7 +7,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 # Copy your actual code
 COPY server.py .
-COPY .env .
 # Tell Docker this container will listen on port 8080
 EXPOSE 8080
 
