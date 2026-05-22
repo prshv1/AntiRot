@@ -1,5 +1,16 @@
 const API_BASE = 'https://anti-rot-332539693864.us-central1.run.app';
 const CLASSIFY_URL = `${API_BASE}/classify`;
+const DEFAULT_FOCUS_SETTINGS = {
+  hideHomeFeed: false,
+  hideSidebar: false,
+  hideShorts: false,
+  redirectShorts: false,
+  hideComments: false,
+  hideEndScreen: false,
+  disableAutoplay: false,
+  hideSearchDistractions: false,
+  minimalWatchPage: false,
+};
 
 // Cache to avoid re-classifying the same video
 const classificationCache = new Map();
@@ -127,6 +138,7 @@ chrome.runtime.onInstalled.addListener(() => {
     blockedVideos: 0,
     allowedVideos: 0,
     customInstructions: '',
+    focusSettings: DEFAULT_FOCUS_SETTINGS,
   });
   console.log('[AntiRot] Extension installed, shield active.');
 });

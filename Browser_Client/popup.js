@@ -1,3 +1,46 @@
+if (!globalThis.chrome?.storage?.local) {
+  const storageKey = 'antirot-dev-storage';
+
+  function readDevStorage() {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey)) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  const chromeFallback = globalThis.chrome || {};
+  chromeFallback.storage = {
+    local: {
+      get(keys, callback) {
+        const data = readDevStorage();
+
+        if (Array.isArray(keys)) {
+          callback(Object.fromEntries(keys.map((key) => [key, data[key]])));
+          return;
+        }
+
+        if (typeof keys === 'string') {
+          callback({ [keys]: data[keys] });
+          return;
+        }
+
+        callback(data);
+      },
+      set(value, callback) {
+        localStorage.setItem(storageKey, JSON.stringify({ ...readDevStorage(), ...value }));
+        callback?.();
+      },
+    },
+  };
+  chromeFallback.tabs = chromeFallback.tabs || {
+    query(_query, callback) {
+      callback([]);
+    },
+  };
+  globalThis.chrome = chromeFallback;
+}
+
 // ── DOM Elements ──
 const toggleSwitch = document.getElementById('toggleSwitch');
 const statusText = document.getElementById('statusText');
@@ -11,6 +54,47 @@ const emptyHint = document.getElementById('emptyHint');
 const themeToggle = document.getElementById('themeToggle');
 const instructionsInput = document.getElementById('instructionsInput');
 const saveInstructionsBtn = document.getElementById('saveInstructionsBtn');
+const focusToggles = Array.from(document.querySelectorAll('.focus-toggle'));
+const presetButtons = Array.from(document.querySelectorAll('.preset-btn'));
+
+const FOCUS_SETTINGS_KEY = 'focusSettings';
+const DEFAULT_FOCUS_SETTINGS = {
+  hideHomeFeed: false,
+  hideSidebar: false,
+  hideShorts: false,
+  redirectShorts: false,
+  hideComments: false,
+  hideEndScreen: false,
+  disableAutoplay: false,
+  hideSearchDistractions: false,
+  minimalWatchPage: false,
+};
+const FOCUS_PRESETS = {
+  off: { ...DEFAULT_FOCUS_SETTINGS },
+  balanced: {
+  hideHomeFeed: false,
+  hideSidebar: true,
+  hideShorts: true,
+  redirectShorts: false,
+  hideComments: false,
+  hideEndScreen: true,
+  disableAutoplay: true,
+  hideSearchDistractions: true,
+  minimalWatchPage: false,
+},
+  strict: {
+  hideHomeFeed: true,
+  hideSidebar: true,
+  hideShorts: true,
+  redirectShorts: true,
+  hideComments: true,
+  hideEndScreen: true,
+  disableAutoplay: true,
+  hideSearchDistractions: true,
+  minimalWatchPage: true,
+},
+};
+
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadWhitelist();
   loadTheme();
   loadInstructions();
+  loadFocusSettings();
 });
 
 // ── Toggle Logic ──
@@ -139,6 +224,79 @@ channelInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     addChannel(channelInput.value);
   }
+});
+
+// ── Focus Controls ──
+function normalizeFocusSettings(settings) {
+  const normalized = {
+    ...DEFAULT_FOCUS_SETTINGS,
+    ...(settings || {}),
+  };
+
+  return normalized;
+}
+
+function prepareFocusSettingsForStorage(settings) {
+  return normalizeFocusSettings(settings);
+}
+
+function loadFocusSettings() {
+  chrome.storage.local.get([FOCUS_SETTINGS_KEY], (data) => {
+    renderFocusSettings(normalizeFocusSettings(data[FOCUS_SETTINGS_KEY]));
+  });
+}
+
+function renderFocusSettings(settings) {
+  focusToggles.forEach((toggle) => {
+    toggle.checked = Boolean(settings[toggle.dataset.focusKey]);
+  });
+  updatePresetState(settings);
+}
+
+function updatePresetState(settings) {
+  presetButtons.forEach((button) => {
+    const preset = FOCUS_PRESETS[button.dataset.focusPreset];
+    button.classList.toggle('active', Boolean(preset) && focusSettingsEqual(settings, preset));
+  });
+}
+
+function focusSettingsEqual(left, right) {
+  return Object.keys(DEFAULT_FOCUS_SETTINGS).every((key) => Boolean(left[key]) === Boolean(right[key]));
+}
+
+function saveFocusSettings(settings) {
+  const normalized = prepareFocusSettingsForStorage(settings);
+
+  chrome.storage.local.set({ [FOCUS_SETTINGS_KEY]: normalized }, () => {
+    renderFocusSettings(normalized);
+    notifyYoutubeTabs({ action: 'focusSettingsChanged', settings: normalized });
+  });
+}
+
+function notifyYoutubeTabs(message) {
+  chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+    tabs.forEach((tab) => {
+      chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+    });
+  });
+}
+
+focusToggles.forEach((toggle) => {
+  toggle.addEventListener('change', () => {
+    chrome.storage.local.get([FOCUS_SETTINGS_KEY], (data) => {
+      const settings = normalizeFocusSettings(data[FOCUS_SETTINGS_KEY]);
+      settings[toggle.dataset.focusKey] = toggle.checked;
+      saveFocusSettings(settings);
+    });
+  });
+});
+
+presetButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const preset = FOCUS_PRESETS[button.dataset.focusPreset];
+    if (!preset) return;
+    saveFocusSettings(preset);
+  });
 });
 
 // ── Helpers ──
