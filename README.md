@@ -30,7 +30,7 @@ The system operates as a real-time proxy intercepting YouTube navigation events:
 
 1. **Client Intercept**: The Chrome extension detects a YouTube video URL via background service workers.
 2. **Server Cache Check**: The FastAPI server checks the local classification cache by YouTube video ID, falling back to the raw URL for non-YouTube links.
-3. **Transcript Retrieval**: On a cache miss, the server calls the Supadata API to extract the full video transcript.
+3. **Transcript Retrieval**: On a cache miss, the server calls the Supadata API to extract the full video transcript. If custom instructions are present and the video is cached, the cached transcript is reused but the cached category is ignored.
 4. **LLM Classification**: The transcript and any custom user instructions are passed to an OpenRouter LLM endpoint for binary evaluation (Value vs. Distraction).
 5. **Cache Write & Client Enforcement**: Successful classifications are stored with the video URL, transcript, and category. The extension reads the API response and either injects a blocking overlay or allows navigation.
 
@@ -47,7 +47,7 @@ The prompt utilizes a zero-shot, binary classification approach. The system prom
 Users can write custom instructions directly in the browser extension popup. These instructions are appended to the system prompt at classification time, giving the LLM absolute overrides. For example: *"Allow rickrolls"* or *"Block all gaming content even if educational."* Custom instructions take priority over the default classification rules.
 
 ### Model Choice
-The pipeline utilizes `openai/gpt-oss-120b:free` via OpenRouter, with an automatic fallback to `mistralai/mistral-nemo`. This optimizes for low-latency inference and zero API cost while retaining the necessary parameter depth to accurately classify complex context boundaries from unstructured transcript data.
+The pipeline utilizes `openai/gpt-oss-120b:free` via OpenRouter, with an automatic fallback to the paid `openai/gpt-oss-120b` model. This keeps the free model as the primary path while retaining a same-family fallback when OpenRouter cannot return a usable response from the free endpoint.
 
 ### Edge Case Handling
 The system implements a **fail-open** design pattern to maintain a frictionless user experience:
@@ -95,7 +95,7 @@ uvicorn server:app --reload --port 8000
 
 Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted `install_id` and `install_token` match before checking the classification cache or running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`. Request tracking is logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event includes request metadata, client IP/proxy headers, URL, instructions, install ID, install token hash, YouTube video ID, cache status, Supadata/OpenRouter timings, result category, and failure details. Raw install tokens and account identifiers are not logged.
 
-Successful classifications are cached in SQLite at `CLASSIFICATION_CACHE_DB_PATH` (`data/video_classification_cache.sqlite3` by default). The cache stores the video URL, transcript, and category. If a matching video is already cached, `/classify` returns the cached category and does not call Supadata or OpenRouter.
+Successful default-rule classifications are cached in SQLite at `CLASSIFICATION_CACHE_DB_PATH` (`data/video_classification_cache.sqlite3` by default). The cache stores the video URL, transcript, and category. If a matching video is already cached and the request has no custom instructions, `/classify` returns the cached category and does not call Supadata or OpenRouter. If custom instructions are present, the server reuses a cached transcript when available, but still calls OpenRouter and does not write the custom-instruction result back into the shared cache.
 
 For cache hits, request logs mark live-pipeline-only fields such as Supadata, OpenRouter, and cache-write timings as `na`.
 
@@ -126,7 +126,7 @@ The request log is append-only: every event is added as one JSON object line to 
 ## Tech Stack
 
 - **Backend:** Python 3.11, FastAPI, Uvicorn
-- **AI / LLM:** OpenRouter (`gpt-oss-120b`, `mistral-nemo`)
+- **AI / LLM:** OpenRouter (`gpt-oss-120b:free`, `gpt-oss-120b`)
 - **Transcript Extraction:** Supadata API
 - **Browser Extension:** Chrome Manifest V3 (Vanilla JS)
 - **Deployment:** Docker, Google Cloud Run

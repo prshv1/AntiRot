@@ -47,9 +47,18 @@ def _positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _positive_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 RATE_LIMIT_WINDOW_SECONDS = _positive_int_env("RATE_LIMIT_WINDOW_SECONDS", 60)
 RATE_LIMIT_MAX_REQUESTS = _positive_int_env("RATE_LIMIT_MAX_REQUESTS", 30)
 RATE_LIMIT_CLEANUP_SECONDS = max(RATE_LIMIT_WINDOW_SECONDS * 10, 300)
+OPENROUTER_TIMEOUT_SECONDS = _positive_float_env("OPENROUTER_TIMEOUT_SECONDS", 30.0)
 _rate_limit_lock = Lock()
 _rate_limit_hits: Dict[str, Deque[float]] = defaultdict(deque)
 _last_rate_limit_cleanup = 0.0
@@ -148,6 +157,14 @@ def extract_youtube_video_id(video_url: str) -> Optional[str]:
 
 def normalize_video_url(video_url: str) -> str:
     return video_url.strip()
+
+
+def normalize_instructions(instructions: Optional[str]) -> str:
+    return (instructions or "").strip()
+
+
+def has_custom_instructions(instructions: Optional[str]) -> bool:
+    return bool(normalize_instructions(instructions))
 
 
 def get_video_cache_key(video_url: str) -> str:
@@ -497,6 +514,8 @@ def build_classify_tracking_event(
             "candidate_key": cache_key,
             "source": "live_pipeline",
             "hit": False,
+            "category_reused": False,
+            "transcript_reused": False,
             "usable_for_future_cache": False,
         },
     }
@@ -645,20 +664,18 @@ def classify_video(transcript: str, instructions: Optional[str] = None) -> int:
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=payload,
+            timeout=OPENROUTER_TIMEOUT_SECONDS,
         )
         result = response.json()
 
-        if (
-            "error" in result
-            or "choices" not in result
-            or len(result.get("choices", [])) == 0
-        ):
-            print("Falling back to mistralai/mistral-nemo")
-            payload["model"] = "mistralai/mistral-nemo"
+        if "error" in result or not result.get("choices"):
+            print("Falling back to openai/gpt-oss-120b")
+            payload["model"] = "openai/gpt-oss-120b"
             response = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers=headers,
                 json=payload,
+                timeout=OPENROUTER_TIMEOUT_SECONDS,
             )
             result = response.json()
 
@@ -760,6 +777,7 @@ def classify(req: VideoRequest, request: Request):
         pipeline_stage = "verified_rate_limit"
         enforce_verified_install_rate_limit(request, install_id)
         print(f"Processing URL: {req.url}")
+        custom_instructions_present = has_custom_instructions(req.instructions)
 
         pipeline_stage = "classification_cache_lookup"
         cache_started = time.monotonic()
@@ -768,13 +786,15 @@ def classify(req: VideoRequest, request: Request):
         finally:
             timings_ms["cache_lookup"] = int((time.monotonic() - cache_started) * 1000)
 
-        if cached_classification:
+        if cached_classification and not custom_instructions_present:
             category = int(cached_classification["category"])
             mark_live_pipeline_not_applicable(tracking_event, timings_ms)
             tracking_event["cache"].update(
                 {
                     "source": "classification_cache",
                     "hit": True,
+                    "category_reused": True,
+                    "transcript_reused": True,
                     "stored_url": cached_classification.get("video_url"),
                     "hit_count": cached_classification.get("hit_count"),
                     "transcript_chars": len(
@@ -785,17 +805,47 @@ def classify(req: VideoRequest, request: Request):
             )
             return VideoResponse(category=category)
 
-        tracking_event["cache"]["source"] = "live_pipeline"
+        if cached_classification and custom_instructions_present:
+            transcript = cached_classification.get("transcript") or ""
+            tracking_event["cache"].update(
+                {
+                    "source": "classification_cache_transcript",
+                    "hit": True,
+                    "category_reused": False,
+                    "transcript_reused": True,
+                    "stored_url": cached_classification.get("video_url"),
+                    "hit_count": cached_classification.get("hit_count"),
+                    "transcript_chars": len(transcript),
+                    "usable_for_future_cache": True,
+                }
+            )
+            tracking_event["supadata"].update(
+                {
+                    "called": NOT_APPLICABLE,
+                    "transcript_chars": NOT_APPLICABLE,
+                }
+            )
+            timings_ms["supadata"] = NOT_APPLICABLE
+        else:
+            tracking_event["cache"]["source"] = "live_pipeline"
 
-        pipeline_stage = "supadata_transcript"
-        transcript_started = time.monotonic()
-        try:
-            tracking_event["supadata"]["called"] = True
-            transcript = get_transcript(req.url)
-        finally:
-            timings_ms["supadata"] = int((time.monotonic() - transcript_started) * 1000)
+            pipeline_stage = "supadata_transcript"
+            transcript_started = time.monotonic()
+            try:
+                tracking_event["supadata"]["called"] = True
+                transcript = get_transcript(req.url)
+            finally:
+                timings_ms["supadata"] = int(
+                    (time.monotonic() - transcript_started) * 1000
+                )
 
-        tracking_event["supadata"]["transcript_chars"] = len(transcript or "")
+            tracking_event["supadata"]["transcript_chars"] = len(transcript or "")
+
+            if not transcript:
+                raise HTTPException(
+                    status_code=422,
+                    detail="No English transcript found for this video.",
+                )
 
         if not transcript:
             raise HTTPException(
@@ -816,16 +866,22 @@ def classify(req: VideoRequest, request: Request):
         pipeline_stage = "classification_cache_write"
         cache_write_started = time.monotonic()
         try:
-            save_classification_cache(req.url, transcript, category)
-            tracking_event["cache"]["write_success"] = True
+            if custom_instructions_present:
+                tracking_event["cache"]["write_success"] = NOT_APPLICABLE
+                tracking_event["cache"]["write_error"] = NOT_APPLICABLE
+                timings_ms["cache_write"] = NOT_APPLICABLE
+            else:
+                save_classification_cache(req.url, transcript, category)
+                tracking_event["cache"]["write_success"] = True
         except Exception as exc:
             tracking_event["cache"]["write_success"] = False
             tracking_event["cache"]["write_error"] = str(exc)
             print(f"[classification_cache_error] {exc}")
         finally:
-            timings_ms["cache_write"] = int(
-                (time.monotonic() - cache_write_started) * 1000
-            )
+            if timings_ms.get("cache_write") != NOT_APPLICABLE:
+                timings_ms["cache_write"] = int(
+                    (time.monotonic() - cache_write_started) * 1000
+                )
 
         return VideoResponse(category=category)
     except HTTPException as exc:
@@ -840,7 +896,10 @@ def classify(req: VideoRequest, request: Request):
         total_ms = int((time.monotonic() - started) * 1000)
         timings_ms["total"] = total_ms
         tracking_event["pipeline_stage"] = pipeline_stage
-        tracking_event["cache"]["usable_for_future_cache"] = category is not None
+        tracking_event["cache"]["usable_for_future_cache"] = bool(
+            tracking_event["cache"].get("usable_for_future_cache")
+            or (category is not None and not has_custom_instructions(req.instructions))
+        )
         tracking_event["outcome"] = {
             "success": status_code < 400,
             "status_code": status_code,

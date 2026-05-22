@@ -35,7 +35,7 @@ const DEFAULT_COLLAPSED_SECTIONS = {
   rules: true,
 };
 
-// Cache to avoid re-classifying the same video
+// Cache to avoid re-classifying the same video when no custom rules are active
 const classificationCache = new Map();
 
 // ── Message Handler ──
@@ -68,17 +68,18 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
       return;
     }
 
-    // Check cache first
-    const videoId = extractVideoId(videoUrl);
-    if (videoId && classificationCache.has(videoId)) {
-      const cached = classificationCache.get(videoId);
-      console.log('[AntiRot] Cache hit for', videoId, cached);
+    const userInstructions = data.customInstructions || '';
+
+    // Check extension cache only when default rules are active. Custom instructions
+    // should always reach the server so OpenRouter can apply the latest user rules.
+    const cacheKey = getClassificationCacheKey(videoUrl);
+    if (cacheKey && !userInstructions.trim() && classificationCache.has(cacheKey)) {
+      const cached = classificationCache.get(cacheKey);
+      console.log('[AntiRot] Cache hit for', cacheKey, cached);
       sendResponse(cached);
       return;
     }
 
-    // Get custom instructions (default to empty string)
-    const userInstructions = data.customInstructions || '';
     let installCredentials = await getOrCreateInstallCredentials(
       data.installId,
       data.installToken
@@ -116,8 +117,8 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
     };
 
     // Cache the result
-    if (videoId) {
-      classificationCache.set(videoId, responseData);
+    if (cacheKey && !userInstructions.trim()) {
+      classificationCache.set(cacheKey, responseData);
       // Evict old cache entries (keep last 100)
       if (classificationCache.size > 100) {
         const firstKey = classificationCache.keys().next().value;
@@ -147,10 +148,24 @@ async function updateStats(isValuable) {
 function extractVideoId(url) {
   try {
     const urlObj = new URL(url);
+    if (urlObj.hostname.endsWith('youtu.be')) {
+      return urlObj.pathname.split('/').filter(Boolean)[0] || null;
+    }
+    if (urlObj.pathname.startsWith('/shorts/')) {
+      return urlObj.pathname.split('/').filter(Boolean)[1] || null;
+    }
     return urlObj.searchParams.get('v');
   } catch {
     return null;
   }
+}
+
+function getClassificationCacheKey(videoUrl) {
+  const videoId = extractVideoId(videoUrl);
+  const videoKey = videoId || videoUrl.trim();
+  if (!videoKey) return null;
+
+  return videoKey;
 }
 
 function getStorage(keys) {
