@@ -8,19 +8,30 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <div class="logo-row">
-        <div class="logo-icon">
-          <img src="icons/icon48.png" alt="AntiRot" class="logo-img">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="logo-icon" aria-hidden="true">
+          <img src="icons/icon48.png" alt="" class="logo-img">
         </div>
-        <span class="logo-text">AntiRot</span>
-        <button id="themeToggle" class="theme-toggle" title="Toggle theme">
-          <!-- Moon (dark mode icon) -->
+        <div class="brand-copy">
+          <span class="logo-text">AntiRot</span>
+          <span class="status-pill" id="statusText">Active</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <label class="power-toggle" aria-label="Toggle AntiRot shield">
+          <input type="checkbox" id="toggleSwitch" checked>
+          <span class="power-toggle-text" aria-hidden="true">
+            <span class="power-state power-state-on">On</span>
+            <span class="power-state power-state-off">Off</span>
+          </span>
+        </label>
+
+        <button id="themeToggle" class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
           <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
-          <!-- Sun (light mode icon) -->
           <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"/>
             <line x1="12" y1="1" x2="12" y2="3"/>
@@ -34,261 +45,255 @@
           </svg>
         </button>
       </div>
-    </div>
+    </header>
 
-    <!-- Divider -->
-    <div class="divider"></div>
-
-    <!-- Toggle Section -->
-    <div class="toggle-section">
-      <div class="toggle-info">
-        <span class="toggle-label">Shield</span>
-        <span class="toggle-status" id="statusText">Active</span>
-      </div>
-      <label class="toggle-switch">
-        <input type="checkbox" id="toggleSwitch" checked>
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-
-    <!-- Stats -->
-    <div class="stats-row">
-      <div class="stat-card">
+    <section class="stats-row" aria-label="Filtering stats">
+      <div class="stat-card stat-card-primary">
         <span class="stat-number" id="blockedCount">0</span>
-        <span class="stat-label">blocked</span>
+        <span class="stat-label">Blocked</span>
       </div>
       <div class="stat-card">
         <span class="stat-number" id="allowedCount">0</span>
-        <span class="stat-label">passed</span>
+        <span class="stat-label">Passed</span>
       </div>
-    </div>
+    </section>
 
-    <!-- Divider -->
-    <div class="divider"></div>
-
-    <!-- UI Blocking Section -->
-    <div class="settings-section" data-section="uiBlocking">
+    <section class="settings-section" data-section="uiBlocking">
       <button class="section-toggle" type="button" data-section-toggle="uiBlocking" aria-expanded="true">
-        <span class="section-title">UI Blocking</span>
+        <span class="section-heading">
+          <span class="section-kicker">Mode</span>
+          <span class="section-title">UI Blocking</span>
+        </span>
         <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
       </button>
 
       <div class="section-body" data-section-body="uiBlocking">
-        <div class="presets-section">
-          <span class="presets-title">Presets</span>
-          <div class="focus-presets">
-            <button class="preset-btn" data-focus-preset="off">Off</button>
-            <button class="preset-btn" data-focus-preset="balanced">Balanced</button>
-            <button class="preset-btn" data-focus-preset="strict">Strict</button>
-            <button class="preset-btn preset-btn-custom" data-focus-preset="custom">Custom</button>
-          </div>
+        <div class="preset-deck">
+          <button class="preset-btn" data-focus-preset="off">Off</button>
+          <button class="preset-btn" data-focus-preset="balanced">Balanced</button>
+          <button class="preset-btn" data-focus-preset="strict">Strict</button>
+          <button class="preset-btn preset-btn-custom" data-focus-preset="custom">Custom</button>
         </div>
 
         <div class="focus-controls">
-        <label class="focus-row">
-          <span class="focus-name">Home Feed</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideHomeFeed">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+          <div class="control-group">
+            <span class="control-group-title">Entry Points</span>
+            <label class="focus-row">
+              <span class="focus-name">Home Feed</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideHomeFeed">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Redirect to Subscriptions</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="redirectHomeToSubscriptions">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Redirect to Subscriptions</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="redirectHomeToSubscriptions">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Video Sidebar</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideVideoSidebar">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Explore, Trending</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideExploreTrending">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Recommended</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideRecommended">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">More from YouTube</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideMoreFromYouTube">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Live Chat</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideLiveChat">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Subscriptions</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideSubscriptions">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
+          </div>
 
-        <label class="focus-row">
-          <span class="focus-name">Playlist</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hidePlaylist">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+          <div class="control-group">
+            <span class="control-group-title">Watch Page</span>
+            <label class="focus-row">
+              <span class="focus-name">Video Sidebar</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideVideoSidebar">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Fundraiser</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideFundraiser">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Recommended</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideRecommended">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">End Screen Feed</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideEndScreenFeed">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Live Chat</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideLiveChat">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">End Screen Cards</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideEndScreenCards">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Playlist</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hidePlaylist">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Shorts</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideShorts">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Video Info</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideVideoInfo">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Block Shorts</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="redirectShorts">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Minimal Watch</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="minimalWatchPage">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
+          </div>
 
-        <label class="focus-row">
-          <span class="focus-name">Comments</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideComments">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+          <div class="control-group">
+            <span class="control-group-title">End Screens</span>
+            <label class="focus-row">
+              <span class="focus-name">End Screen Feed</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideEndScreenFeed">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Mixes</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideMixes">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">End Screen Cards</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideEndScreenCards">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Merch, Tickets, Offers</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideMerchOffers">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Disable Annotations</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="disableAnnotations">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
+          </div>
 
-        <label class="focus-row">
-          <span class="focus-name">Video Info</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideVideoInfo">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+          <div class="control-group">
+            <span class="control-group-title">Noise Filters</span>
+            <label class="focus-row">
+              <span class="focus-name">Shorts</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideShorts">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Top Header</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideTopHeader">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Block Shorts</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="redirectShorts">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Notifications</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideNotifications">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Comments</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideComments">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Inapt Search Results</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideInaptSearchResults">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Mixes</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideMixes">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Explore, Trending</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideExploreTrending">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Fundraiser</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideFundraiser">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">More from YouTube</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideMoreFromYouTube">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Merch, Tickets, Offers</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideMerchOffers">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Subscriptions</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="hideSubscriptions">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Inapt Search Results</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideInaptSearchResults">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
+          </div>
 
-        <label class="focus-row">
-          <span class="focus-name">Disable Autoplay</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="disableAutoplay">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+          <div class="control-group">
+            <span class="control-group-title">Playback Chrome</span>
+            <label class="focus-row">
+              <span class="focus-name">Top Header</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideTopHeader">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Disable Annotations</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="disableAnnotations">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Notifications</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="hideNotifications">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
 
-        <label class="focus-row">
-          <span class="focus-name">Minimal Watch</span>
-          <span class="toggle-switch toggle-switch-sm">
-            <input type="checkbox" class="focus-toggle" data-focus-key="minimalWatchPage">
-            <span class="toggle-slider"></span>
-          </span>
-        </label>
+            <label class="focus-row">
+              <span class="focus-name">Disable Autoplay</span>
+              <span class="toggle-switch toggle-switch-sm">
+                <input type="checkbox" class="focus-toggle" data-focus-key="disableAutoplay">
+                <span class="toggle-slider"></span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Divider -->
-    <div class="divider"></div>
-
-    <!-- Rules & Exceptions Section -->
-    <div class="settings-section rules-section collapsed" data-section="rules">
+    <section class="settings-section rules-section collapsed" data-section="rules">
       <button class="section-toggle" type="button" data-section-toggle="rules" aria-expanded="false">
-        <span class="section-title">Rules & Exceptions</span>
+        <span class="section-heading">
+          <span class="section-kicker">Exceptions</span>
+          <span class="section-title">Rules</span>
+        </span>
         <span class="whitelist-count" id="whitelistCount">0</span>
         <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6 9 12 15 18 9"/>
@@ -307,7 +312,7 @@
               spellcheck="false"
               autocomplete="off"
             >
-            <button id="addChannelBtn" class="add-btn" title="Add channel">
+            <button id="addChannelBtn" class="add-btn" title="Add channel" aria-label="Add channel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
@@ -341,12 +346,12 @@
           ></textarea>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Footer -->
-    <div class="footer">
-      <span class="footer-text">v0.6 — <a href="https://prshv.com" target="_blank" class="footer-link">@prshv1</a></span>
-    </div>
+    <footer class="footer">
+      <span class="footer-text">v0.6.1</span>
+      <a href="https://prshv.com" target="_blank" class="footer-link">@prshv1</a>
+    </footer>
   </div>
 
   <script src="popup.js"></script>
