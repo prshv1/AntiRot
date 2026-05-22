@@ -58,40 +58,95 @@ const focusToggles = Array.from(document.querySelectorAll('.focus-toggle'));
 const presetButtons = Array.from(document.querySelectorAll('.preset-btn'));
 
 const FOCUS_SETTINGS_KEY = 'focusSettings';
+const FOCUS_LEGACY_KEYS = new Set(['hideSidebar', 'hideEndScreen', 'hideSearchDistractions']);
 const DEFAULT_FOCUS_SETTINGS = {
   hideHomeFeed: false,
-  hideSidebar: false,
+  redirectHomeToSubscriptions: false,
+  hideVideoSidebar: false,
+  hideRecommended: false,
+  hideLiveChat: false,
+  hidePlaylist: false,
+  hideFundraiser: false,
+  hideEndScreenFeed: false,
+  hideEndScreenCards: false,
   hideShorts: false,
   redirectShorts: false,
   hideComments: false,
-  hideEndScreen: false,
+  hideMixes: false,
+  hideMerchOffers: false,
+  hideVideoInfo: false,
+  hideTopHeader: false,
+  hideNotifications: false,
+  hideInaptSearchResults: false,
+  hideExploreTrending: false,
+  hideMoreFromYouTube: false,
+  hideSubscriptions: false,
   disableAutoplay: false,
-  hideSearchDistractions: false,
+  disableAnnotations: false,
   minimalWatchPage: false,
+  hideSidebar: false,
+  hideEndScreen: false,
+  hideSearchDistractions: false,
 };
 const FOCUS_PRESETS = {
   off: { ...DEFAULT_FOCUS_SETTINGS },
   balanced: {
   hideHomeFeed: false,
-  hideSidebar: true,
+  redirectHomeToSubscriptions: false,
+  hideVideoSidebar: true,
+  hideRecommended: true,
+  hideLiveChat: false,
+  hidePlaylist: false,
+  hideFundraiser: false,
+  hideEndScreenFeed: true,
+  hideEndScreenCards: true,
   hideShorts: true,
   redirectShorts: false,
   hideComments: false,
-  hideEndScreen: true,
+  hideMixes: false,
+  hideMerchOffers: false,
+  hideVideoInfo: false,
+  hideTopHeader: false,
+  hideNotifications: false,
+  hideInaptSearchResults: true,
+  hideExploreTrending: false,
+  hideMoreFromYouTube: false,
+  hideSubscriptions: false,
   disableAutoplay: true,
-  hideSearchDistractions: true,
+  disableAnnotations: true,
   minimalWatchPage: false,
+  hideSidebar: false,
+  hideEndScreen: false,
+  hideSearchDistractions: false,
 },
   strict: {
   hideHomeFeed: true,
-  hideSidebar: true,
+  redirectHomeToSubscriptions: true,
+  hideVideoSidebar: true,
+  hideRecommended: true,
+  hideLiveChat: true,
+  hidePlaylist: true,
+  hideFundraiser: true,
+  hideEndScreenFeed: true,
+  hideEndScreenCards: true,
   hideShorts: true,
   redirectShorts: true,
   hideComments: true,
-  hideEndScreen: true,
+  hideMixes: true,
+  hideMerchOffers: true,
+  hideVideoInfo: true,
+  hideTopHeader: false,
+  hideNotifications: true,
+  hideInaptSearchResults: true,
+  hideExploreTrending: true,
+  hideMoreFromYouTube: true,
+  hideSubscriptions: false,
   disableAutoplay: true,
-  hideSearchDistractions: true,
+  disableAnnotations: true,
   minimalWatchPage: true,
+  hideSidebar: false,
+  hideEndScreen: false,
+  hideSearchDistractions: false,
 },
 };
 
@@ -233,11 +288,22 @@ function normalizeFocusSettings(settings) {
     ...(settings || {}),
   };
 
+  if (settings?.hideSidebar) normalized.hideVideoSidebar = true;
+  if (settings?.hideEndScreen) {
+    normalized.hideEndScreenFeed = true;
+    normalized.hideEndScreenCards = true;
+  }
+  if (settings?.hideSearchDistractions) normalized.hideInaptSearchResults = true;
+
   return normalized;
 }
 
 function prepareFocusSettingsForStorage(settings) {
-  return normalizeFocusSettings(settings);
+  const normalized = normalizeFocusSettings(settings);
+  normalized.hideSidebar = normalized.hideVideoSidebar;
+  normalized.hideEndScreen = normalized.hideEndScreenFeed || normalized.hideEndScreenCards;
+  normalized.hideSearchDistractions = normalized.hideInaptSearchResults;
+  return normalized;
 }
 
 function loadFocusSettings() {
@@ -261,7 +327,9 @@ function updatePresetState(settings) {
 }
 
 function focusSettingsEqual(left, right) {
-  return Object.keys(DEFAULT_FOCUS_SETTINGS).every((key) => Boolean(left[key]) === Boolean(right[key]));
+  return Object.keys(DEFAULT_FOCUS_SETTINGS)
+    .filter((key) => !FOCUS_LEGACY_KEYS.has(key))
+    .every((key) => Boolean(left[key]) === Boolean(right[key]));
 }
 
 function saveFocusSettings(settings) {
