@@ -104,6 +104,7 @@ The request log is append-only: every event is added as one JSON object line to 
 ## Upcoming Features
 
 - Lockdown mode
+- Add System theme to light/dark mode
 
 ---
 
