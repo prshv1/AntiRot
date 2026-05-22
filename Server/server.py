@@ -14,6 +14,7 @@ import os
 import re
 import requests
 import secrets
+import sqlite3
 import time
 import uuid
 from supadata import Supadata
@@ -24,6 +25,10 @@ API_KEY = os.getenv("Openrouter_API_KEY")
 SYSTEM_PROMPT = os.getenv("System_Prompt")
 SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
 API_CALL_LOG_PATH = os.getenv("API_CALL_LOG_PATH", "data/api_call_events.jsonl")
+CLASSIFICATION_CACHE_DB_PATH = os.getenv(
+    "CLASSIFICATION_CACHE_DB_PATH",
+    "data/video_classification_cache.sqlite3",
+)
 INSTALL_REGISTRY_PATH = os.getenv("INSTALL_REGISTRY_PATH", "data/install_registry.json")
 API_CALL_LOG_STDOUT = os.getenv("API_CALL_LOG_STDOUT", "true").lower() not in {
     "0",
@@ -31,6 +36,7 @@ API_CALL_LOG_STDOUT = os.getenv("API_CALL_LOG_STDOUT", "true").lower() not in {
     "no",
     "off",
 }
+NOT_APPLICABLE = "na"
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -49,11 +55,12 @@ _rate_limit_hits: Dict[str, Deque[float]] = defaultdict(deque)
 _last_rate_limit_cleanup = 0.0
 _tracking_lock = Lock()
 _install_registry_lock = Lock()
+_classification_cache_lock = Lock()
 
 app = FastAPI(
     title="AntiRot API",
     description="YouTube video classifier",
-    version="0.6",
+    version="0.7",
 )
 
 app.add_middleware(
@@ -137,6 +144,17 @@ def extract_youtube_video_id(video_url: str) -> Optional[str]:
             return path.removeprefix(prefix).split("/", 1)[0]
 
     return None
+
+
+def normalize_video_url(video_url: str) -> str:
+    return video_url.strip()
+
+
+def get_video_cache_key(video_url: str) -> str:
+    video_id = extract_youtube_video_id(video_url)
+    if video_id:
+        return f"youtube:{video_id}"
+    return f"url:{normalize_video_url(video_url)}"
 
 
 def compact_header(value: Optional[str], limit: int = 500) -> Optional[str]:
@@ -225,6 +243,122 @@ def save_install_registry_unlocked(registry: Dict[str, Any]) -> None:
     os.replace(temp_path, registry_path)
 
 
+def get_classification_cache_db_path() -> str:
+    return os.path.abspath(CLASSIFICATION_CACHE_DB_PATH)
+
+
+def open_classification_cache_connection() -> sqlite3.Connection:
+    cache_db_path = get_classification_cache_db_path()
+    os.makedirs(os.path.dirname(cache_db_path), exist_ok=True)
+    connection = sqlite3.connect(cache_db_path)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def ensure_classification_cache_table_unlocked(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS video_classification_cache (
+            cache_key TEXT PRIMARY KEY,
+            video_url TEXT NOT NULL,
+            video_id TEXT,
+            transcript TEXT NOT NULL,
+            category INTEGER NOT NULL CHECK (category IN (0, 1)),
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            hit_count INTEGER NOT NULL DEFAULT 0,
+            last_hit_at_utc TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_video_classification_cache_video_id
+            ON video_classification_cache(video_id)
+        """
+    )
+    connection.commit()
+
+
+def get_cached_classification(video_url: str) -> Optional[Dict[str, Any]]:
+    cache_key = get_video_cache_key(video_url)
+
+    with _classification_cache_lock:
+        with open_classification_cache_connection() as connection:
+            ensure_classification_cache_table_unlocked(connection)
+            row = connection.execute(
+                """
+                SELECT cache_key, video_url, video_id, transcript, category, hit_count
+                FROM video_classification_cache
+                WHERE cache_key = ?
+                """,
+                (cache_key,),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            now = utc_now_iso()
+            connection.execute(
+                """
+                UPDATE video_classification_cache
+                SET hit_count = hit_count + 1,
+                    last_hit_at_utc = ?,
+                    updated_at_utc = ?
+                WHERE cache_key = ?
+                """,
+                (now, now, cache_key),
+            )
+            connection.commit()
+            cached = dict(row)
+            cached["hit_count"] = int(cached.get("hit_count") or 0) + 1
+            return cached
+
+
+def save_classification_cache(
+    video_url: str,
+    transcript: str,
+    category: int,
+) -> None:
+    cache_key = get_video_cache_key(video_url)
+    video_id = extract_youtube_video_id(video_url)
+    now = utc_now_iso()
+
+    with _classification_cache_lock:
+        with open_classification_cache_connection() as connection:
+            ensure_classification_cache_table_unlocked(connection)
+            connection.execute(
+                """
+                INSERT INTO video_classification_cache (
+                    cache_key,
+                    video_url,
+                    video_id,
+                    transcript,
+                    category,
+                    created_at_utc,
+                    updated_at_utc
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    video_url = excluded.video_url,
+                    video_id = excluded.video_id,
+                    transcript = excluded.transcript,
+                    category = excluded.category,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (
+                    cache_key,
+                    normalize_video_url(video_url),
+                    video_id,
+                    transcript,
+                    int(category),
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+
 def create_install_registration(
     request: Request,
     client: Optional[Dict[str, Any]] = None,
@@ -308,6 +442,7 @@ def build_classify_tracking_event(
     request: Request,
 ) -> Dict[str, Any]:
     video_id = extract_youtube_video_id(req.url)
+    cache_key = get_video_cache_key(req.url)
     install_id = get_install_id(req)
     install_token = get_install_token(req)
     forwarded_for = request.headers.get("x-forwarded-for", "")
@@ -340,7 +475,7 @@ def build_classify_tracking_event(
         "video": {
             "url": req.url,
             "video_id": video_id,
-            "cache_key": video_id or req.url,
+            "cache_key": cache_key,
         },
         "input": {
             "url": req.url,
@@ -355,12 +490,46 @@ def build_classify_tracking_event(
             "called": False,
             "transcript_chars": None,
         },
+        "openrouter": {
+            "called": False,
+        },
         "cache": {
-            "candidate_key": video_id or req.url,
+            "candidate_key": cache_key,
             "source": "live_pipeline",
+            "hit": False,
             "usable_for_future_cache": False,
         },
     }
+
+
+def mark_live_pipeline_not_applicable(
+    tracking_event: Dict[str, Any],
+    timings_ms: Dict[str, Any],
+) -> None:
+    tracking_event["supadata"].update(
+        {
+            "called": NOT_APPLICABLE,
+            "transcript_chars": NOT_APPLICABLE,
+        }
+    )
+    tracking_event["openrouter"].update(
+        {
+            "called": NOT_APPLICABLE,
+        }
+    )
+    tracking_event["cache"].update(
+        {
+            "write_success": NOT_APPLICABLE,
+            "write_error": NOT_APPLICABLE,
+        }
+    )
+    timings_ms.update(
+        {
+            "supadata": NOT_APPLICABLE,
+            "openrouter": NOT_APPLICABLE,
+            "cache_write": NOT_APPLICABLE,
+        }
+    )
 
 
 def record_api_call(event: Dict[str, Any]) -> None:
@@ -592,6 +761,32 @@ def classify(req: VideoRequest, request: Request):
         enforce_verified_install_rate_limit(request, install_id)
         print(f"Processing URL: {req.url}")
 
+        pipeline_stage = "classification_cache_lookup"
+        cache_started = time.monotonic()
+        try:
+            cached_classification = get_cached_classification(req.url)
+        finally:
+            timings_ms["cache_lookup"] = int((time.monotonic() - cache_started) * 1000)
+
+        if cached_classification:
+            category = int(cached_classification["category"])
+            mark_live_pipeline_not_applicable(tracking_event, timings_ms)
+            tracking_event["cache"].update(
+                {
+                    "source": "classification_cache",
+                    "hit": True,
+                    "stored_url": cached_classification.get("video_url"),
+                    "hit_count": cached_classification.get("hit_count"),
+                    "transcript_chars": len(
+                        cached_classification.get("transcript") or ""
+                    ),
+                    "usable_for_future_cache": True,
+                }
+            )
+            return VideoResponse(category=category)
+
+        tracking_event["cache"]["source"] = "live_pipeline"
+
         pipeline_stage = "supadata_transcript"
         transcript_started = time.monotonic()
         try:
@@ -611,10 +806,25 @@ def classify(req: VideoRequest, request: Request):
         pipeline_stage = "openrouter_classification"
         classification_started = time.monotonic()
         try:
+            tracking_event["openrouter"]["called"] = True
             category = classify_video(transcript, req.instructions)
         finally:
             timings_ms["openrouter"] = int(
                 (time.monotonic() - classification_started) * 1000
+            )
+
+        pipeline_stage = "classification_cache_write"
+        cache_write_started = time.monotonic()
+        try:
+            save_classification_cache(req.url, transcript, category)
+            tracking_event["cache"]["write_success"] = True
+        except Exception as exc:
+            tracking_event["cache"]["write_success"] = False
+            tracking_event["cache"]["write_error"] = str(exc)
+            print(f"[classification_cache_error] {exc}")
+        finally:
+            timings_ms["cache_write"] = int(
+                (time.monotonic() - cache_write_started) * 1000
             )
 
         return VideoResponse(category=category)

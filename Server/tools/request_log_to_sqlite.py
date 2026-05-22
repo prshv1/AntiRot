@@ -68,6 +68,12 @@ def create_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def int_bool_or_na(value: Any) -> Any:
+    if value == "na":
+        return "na"
+    return int(bool(value))
+
+
 def event_to_row(event: Dict[str, Any]) -> Dict[str, Any]:
     request = event.get("request", {})
     install = event.get("install", {})
@@ -97,7 +103,7 @@ def event_to_row(event: Dict[str, Any]) -> Dict[str, Any]:
         "success": int(bool(outcome.get("success"))),
         "status_code": outcome.get("status_code"),
         "error": json.dumps(outcome.get("error")) if outcome.get("error") else None,
-        "supadata_called": int(bool(supadata.get("called"))),
+        "supadata_called": int_bool_or_na(supadata.get("called")),
         "supadata_transcript_chars": supadata.get("transcript_chars"),
         "usable_for_future_cache": int(bool(cache.get("usable_for_future_cache"))),
         "timings_ms": json.dumps(event.get("timings_ms", {}), sort_keys=True),

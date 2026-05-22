@@ -13,8 +13,9 @@
 ## Mirroring
 
 - `Antirot_Dev` is the private development mirror. It may contain real `.env` files by owner preference.
+- Use `Antirot_Dev` as the default working repository for extension and backend changes.
+- Do not mirror changes into this public repo unless the owner explicitly asks for mirroring.
 - When syncing changes from `Antirot_Dev` to this public repo, remove private secrets and verify `.gitignore` still protects env files.
-- Keep backend and extension logic aligned with `Antirot_Dev/main` unless a change is intentionally private-only.
 
 ## Branches
 

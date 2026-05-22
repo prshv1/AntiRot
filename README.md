@@ -29,9 +29,10 @@ Anti-Rot/
 The system operates as a real-time proxy intercepting YouTube navigation events:
 
 1. **Client Intercept**: The Chrome extension detects a YouTube video URL via background service workers.
-2. **Transcript Retrieval**: The URL is forwarded to the FastAPI server, which calls the Supadata API to extract the full video transcript.
-3. **LLM Classification**: The transcript and any custom user instructions are passed to an OpenRouter LLM endpoint for binary evaluation (Value vs. Distraction).
-4. **Client Enforcement**: The extension reads the API response. If flagged as non-valuable, the DOM is injected with a blocking overlay. Otherwise, navigation proceeds uninterrupted.
+2. **Server Cache Check**: The FastAPI server checks the local classification cache by YouTube video ID, falling back to the raw URL for non-YouTube links.
+3. **Transcript Retrieval**: On a cache miss, the server calls the Supadata API to extract the full video transcript.
+4. **LLM Classification**: The transcript and any custom user instructions are passed to an OpenRouter LLM endpoint for binary evaluation (Value vs. Distraction).
+5. **Cache Write & Client Enforcement**: Successful classifications are stored with the video URL, transcript, and category. The extension reads the API response and either injects a blocking overlay or allows navigation.
 
 ---
 
@@ -92,7 +93,11 @@ uvicorn server:app --reload --port 8000
 | `POST` | `/installs/register` | JSON: `{"requested_install_id": "...", "client": {...}}` | JSON: `{"install_id": "...", "install_token": "..."}` | Creates a server-issued install credential pair; can attach a token to an older local install ID during migration |
 | `POST` | `/classify` | JSON: `{"url": "...", "instructions": "...", "install_id": "...", "install_token": "..."}` | JSON: `{"category": 0/1}` | Verifies install credentials, executes classification, and writes a tracking event |
 
-Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted `install_id` and `install_token` match before running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`. Request tracking is logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event includes request metadata, client IP/proxy headers, URL, instructions, install ID, install token hash, YouTube video ID, Supadata/OpenRouter timings, result category, and failure details. Raw install tokens and account identifiers are not logged.
+Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted `install_id` and `install_token` match before checking the classification cache or running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`. Request tracking is logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event includes request metadata, client IP/proxy headers, URL, instructions, install ID, install token hash, YouTube video ID, cache status, Supadata/OpenRouter timings, result category, and failure details. Raw install tokens and account identifiers are not logged.
+
+Successful classifications are cached in SQLite at `CLASSIFICATION_CACHE_DB_PATH` (`data/video_classification_cache.sqlite3` by default). The cache stores the video URL, transcript, and category. If a matching video is already cached, `/classify` returns the cached category and does not call Supadata or OpenRouter.
+
+For cache hits, request logs mark live-pipeline-only fields such as Supadata, OpenRouter, and cache-write timings as `na`.
 
 The request log is append-only: every event is added as one JSON object line to the same `api_call_events.jsonl` file. For larger logs, use `python Server/tools/request_log_summary.py` for a streaming summary or `python Server/tools/request_log_to_sqlite.py` to import the log into `data/api_request_events.sqlite3` for SQL queries and cache analysis.
 
@@ -108,13 +113,13 @@ The request log is append-only: every event is added as one JSON object line to 
 | `v0.4` | Completed client extension and stability patches for pre-beta release |
 | `v0.5` | Custom instructions — users can now write per-session override rules directly in the extension popup |
 | `v0.6` | UI Blocking — configurable YouTube cleanup controls, presets, and collapsible rules & exceptions |
+| `v0.7` | Server-side SQLite classification cache to avoid repeat Supadata/OpenRouter calls |
 
 ---
 
 ## Upcoming Features
 
 - Lockdown mode
-- Supadata transcript caching
 
 ---
 
