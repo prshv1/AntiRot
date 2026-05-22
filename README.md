@@ -5,7 +5,7 @@
 **Stop doomscrolling. Start learning.**
 
 [![Install](https://img.shields.io/badge/Install-antirot.in-FF6B6B?style=for-the-badge&logo=googlechrome&logoColor=white)](https://antirot.in)
-[![Version](https://img.shields.io/badge/Version-0.5.0-FF6B6B?style=for-the-badge)](#version-log)
+[![Version](https://img.shields.io/badge/Version-0.6-FF6B6B?style=for-the-badge)](#version-log)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 
@@ -102,6 +102,7 @@ uvicorn server:app --reload --port 8000
 | `v0.3` | Migrated extraction dependency from yt-dlp to Supadata API |
 | `v0.4` | Completed client extension and stability patches for pre-beta release |
 | `v0.5` | Custom instructions — users can now write per-session override rules directly in the extension popup |
+| `v0.6` | UI Blocking — configurable YouTube cleanup controls, presets, and collapsible rules & exceptions |
 
 ---
 
@@ -110,7 +111,6 @@ uvicorn server:app --reload --port 8000
 - Login & user accounts
 - Lockdown mode
 - Paid plans & API credits
-- Feature blocking tools (e.g. unhook-style sidebar removal)
 
 ---
 

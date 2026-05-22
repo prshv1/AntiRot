@@ -2,4 +2,3 @@
 - Add Lockdown Mode
 - Paid Plans
 - Api Credits
-- Add Feature Blocking tools like unhook
