@@ -5,7 +5,7 @@
 **Stop doomscrolling. Start learning.**
 
 [![Install](https://img.shields.io/badge/Install-antirot.in-FF6B6B?style=for-the-badge&logo=googlechrome&logoColor=white)](https://antirot.in)
-![Version](https://img.shields.io/badge/Version-0.6-FF6B6B?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-0.6.2-FF6B6B?style=for-the-badge)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 
