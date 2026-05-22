@@ -433,6 +433,14 @@ def enforce_rate_limit(
             _last_rate_limit_cleanup = now
 
 
+def enforce_unverified_rate_limit(request: Request) -> None:
+    enforce_rate_limit(request, install_id=None, include_ip=True)
+
+
+def enforce_verified_install_rate_limit(request: Request, install_id: str) -> None:
+    enforce_rate_limit(request, install_id=install_id, include_ip=False)
+
+
 def get_transcript(video_url: str) -> str:
     try:
         supadata = Supadata(api_key=SUPADATA_API_KEY)
@@ -570,11 +578,18 @@ def classify(req: VideoRequest, request: Request):
     pipeline_stage = "rate_limit"
 
     try:
-        enforce_rate_limit(request)
         pipeline_stage = "install_validation"
-        install_id = verify_install_credentials(req, request)
+        try:
+            install_id = verify_install_credentials(req, request)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                pipeline_stage = "unverified_rate_limit"
+                enforce_unverified_rate_limit(request)
+            raise
+
         tracking_event["install"]["verified"] = True
-        enforce_rate_limit(request, install_id, include_ip=False)
+        pipeline_stage = "verified_rate_limit"
+        enforce_verified_install_rate_limit(request, install_id)
         print(f"Processing URL: {req.url}")
 
         pipeline_stage = "supadata_transcript"
