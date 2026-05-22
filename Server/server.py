@@ -24,6 +24,9 @@ load_dotenv()
 API_KEY = os.getenv("Openrouter_API_KEY")
 SYSTEM_PROMPT = os.getenv("System_Prompt")
 SUPADATA_API_KEY = os.getenv("Supadata_API_KEY")
+DATA_BACKEND = os.getenv("DATA_BACKEND", "local").strip().lower()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 API_CALL_LOG_PATH = os.getenv("API_CALL_LOG_PATH", "data/api_call_events.jsonl")
 CLASSIFICATION_CACHE_DB_PATH = os.getenv(
     "CLASSIFICATION_CACHE_DB_PATH",
@@ -59,6 +62,7 @@ RATE_LIMIT_WINDOW_SECONDS = _positive_int_env("RATE_LIMIT_WINDOW_SECONDS", 60)
 RATE_LIMIT_MAX_REQUESTS = _positive_int_env("RATE_LIMIT_MAX_REQUESTS", 30)
 RATE_LIMIT_CLEANUP_SECONDS = max(RATE_LIMIT_WINDOW_SECONDS * 10, 300)
 OPENROUTER_TIMEOUT_SECONDS = _positive_float_env("OPENROUTER_TIMEOUT_SECONDS", 30.0)
+SUPABASE_TIMEOUT_SECONDS = _positive_float_env("SUPABASE_TIMEOUT_SECONDS", 10.0)
 _rate_limit_lock = Lock()
 _rate_limit_hits: Dict[str, Deque[float]] = defaultdict(deque)
 _last_rate_limit_cleanup = 0.0
@@ -69,7 +73,7 @@ _classification_cache_lock = Lock()
 app = FastAPI(
     title="AntiRot API",
     description="YouTube video classifier",
-    version="0.7",
+    version="0.6",
 )
 
 app.add_middleware(
@@ -231,6 +235,117 @@ def hash_optional_install_token(install_token: Optional[str]) -> Optional[str]:
     return hash_install_token(install_token)
 
 
+def use_supabase_backend() -> bool:
+    return DATA_BACKEND == "supabase"
+
+
+def require_supabase_config() -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError(
+            "DATA_BACKEND=supabase requires SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY."
+        )
+
+
+def supabase_headers(prefer: Optional[str] = None) -> Dict[str, str]:
+    require_supabase_config()
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or "",
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def supabase_table_url(table_name: str) -> str:
+    require_supabase_config()
+    return f"{SUPABASE_URL}/rest/v1/{table_name}"
+
+
+def supabase_request(
+    method: str,
+    table_name: str,
+    *,
+    params: Optional[Dict[str, str]] = None,
+    json_body: Optional[Any] = None,
+    prefer: Optional[str] = None,
+) -> Any:
+    response = requests.request(
+        method,
+        supabase_table_url(table_name),
+        headers=supabase_headers(prefer),
+        params=params,
+        json=json_body,
+        timeout=SUPABASE_TIMEOUT_SECONDS,
+    )
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Supabase {method} {table_name} failed with "
+            f"{response.status_code}: {response.text[:500]}"
+        )
+
+    if response.status_code == 204 or not response.text:
+        return None
+
+    return response.json()
+
+
+def supabase_get_install(install_id: str) -> Optional[Dict[str, Any]]:
+    rows = supabase_request(
+        "GET",
+        "antirot_installs",
+        params={
+            "install_id": f"eq.{install_id}",
+            "select": "*",
+            "limit": "1",
+        },
+    )
+    return rows[0] if rows else None
+
+
+def supabase_get_cached_classification(cache_key: str) -> Optional[Dict[str, Any]]:
+    rows = supabase_request(
+        "GET",
+        "antirot_video_classification_cache",
+        params={
+            "cache_key": f"eq.{cache_key}",
+            "select": "cache_key,video_url,video_id,transcript,category,hit_count",
+            "limit": "1",
+        },
+    )
+    return rows[0] if rows else None
+
+
+def supabase_event_row(event: Dict[str, Any]) -> Dict[str, Any]:
+    request_data = event.get("request", {})
+    install = event.get("install", {})
+    video = event.get("video", {})
+    outcome = event.get("outcome", {})
+    cache = event.get("cache", {})
+
+    return {
+        "event": event.get("event"),
+        "request_id": event.get("request_id"),
+        "timestamp_utc": event.get("timestamp_utc"),
+        "path": request_data.get("path"),
+        "client_ip": request_data.get("client_ip"),
+        "install_id": install.get("install_id"),
+        "install_verified": bool(install.get("verified")),
+        "video_url": video.get("url"),
+        "video_id": video.get("video_id"),
+        "cache_key": cache.get("candidate_key") or video.get("cache_key"),
+        "category": outcome.get("category"),
+        "success": bool(outcome.get("success")),
+        "status_code": outcome.get("status_code"),
+        "error": outcome.get("error"),
+        "timings_ms": event.get("timings_ms", {}),
+        "raw_event": event,
+    }
+
+
 def get_install_registry_path() -> str:
     return os.path.abspath(INSTALL_REGISTRY_PATH)
 
@@ -300,6 +415,27 @@ def ensure_classification_cache_table_unlocked(connection: sqlite3.Connection) -
 def get_cached_classification(video_url: str) -> Optional[Dict[str, Any]]:
     cache_key = get_video_cache_key(video_url)
 
+    if use_supabase_backend():
+        cached = supabase_get_cached_classification(cache_key)
+        if not cached:
+            return None
+
+        now = utc_now_iso()
+        hit_count = int(cached.get("hit_count") or 0) + 1
+        supabase_request(
+            "PATCH",
+            "antirot_video_classification_cache",
+            params={"cache_key": f"eq.{cache_key}"},
+            json_body={
+                "hit_count": hit_count,
+                "last_hit_at_utc": now,
+                "updated_at_utc": now,
+            },
+            prefer="return=minimal",
+        )
+        cached["hit_count"] = hit_count
+        return cached
+
     with _classification_cache_lock:
         with open_classification_cache_connection() as connection:
             ensure_classification_cache_table_unlocked(connection)
@@ -340,6 +476,37 @@ def save_classification_cache(
     cache_key = get_video_cache_key(video_url)
     video_id = extract_youtube_video_id(video_url)
     now = utc_now_iso()
+
+    if use_supabase_backend():
+        existing = supabase_get_cached_classification(cache_key)
+        cache_row = {
+            "video_url": normalize_video_url(video_url),
+            "video_id": video_id,
+            "transcript": transcript,
+            "category": int(category),
+            "updated_at_utc": now,
+        }
+
+        if existing:
+            supabase_request(
+                "PATCH",
+                "antirot_video_classification_cache",
+                params={"cache_key": f"eq.{cache_key}"},
+                json_body=cache_row,
+                prefer="return=minimal",
+            )
+        else:
+            supabase_request(
+                "POST",
+                "antirot_video_classification_cache",
+                json_body={
+                    "cache_key": cache_key,
+                    **cache_row,
+                    "created_at_utc": now,
+                },
+                prefer="return=minimal",
+            )
+        return
 
     with _classification_cache_lock:
         with open_classification_cache_connection() as connection:
@@ -384,6 +551,40 @@ def create_install_registration(
     install_token = secrets.token_urlsafe(32)
     token_sha256 = hash_install_token(install_token)
     timestamp = utc_now_iso()
+
+    if use_supabase_backend():
+        if (
+            requested_install_id
+            and is_valid_install_id(requested_install_id)
+            and not supabase_get_install(requested_install_id)
+        ):
+            install_id = requested_install_id
+        else:
+            install_id = f"inst_{uuid.uuid4().hex}"
+            while supabase_get_install(install_id):
+                install_id = f"inst_{uuid.uuid4().hex}"
+
+        supabase_request(
+            "POST",
+            "antirot_installs",
+            json_body={
+                "install_id": install_id,
+                "token_sha256": token_sha256,
+                "migrated_from_local_install_id": install_id == requested_install_id,
+                "created_at_utc": timestamp,
+                "last_seen_at_utc": timestamp,
+                "registration_ip": get_client_ip(request),
+                "last_ip": get_client_ip(request),
+                "user_agent": compact_header(request.headers.get("user-agent")),
+                "client": client or {},
+                "classify_count": 0,
+            },
+            prefer="return=minimal",
+        )
+        return InstallRegisterResponse(
+            install_id=install_id,
+            install_token=install_token,
+        )
 
     with _install_registry_lock:
         registry = load_install_registry_unlocked()
@@ -431,6 +632,31 @@ def verify_install_credentials(req: VideoRequest, request: Request) -> str:
 
     token_sha256 = hash_install_token(install_token)
     timestamp = utc_now_iso()
+
+    if use_supabase_backend():
+        install_record = supabase_get_install(install_id)
+
+        if not install_record or not hmac.compare_digest(
+            install_record.get("token_sha256", ""),
+            token_sha256,
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="User not found.",
+            )
+
+        supabase_request(
+            "PATCH",
+            "antirot_installs",
+            params={"install_id": f"eq.{install_id}"},
+            json_body={
+                "last_seen_at_utc": timestamp,
+                "last_ip": get_client_ip(request),
+                "classify_count": int(install_record.get("classify_count") or 0) + 1,
+            },
+            prefer="return=minimal",
+        )
+        return install_id
 
     with _install_registry_lock:
         registry = load_install_registry_unlocked()
@@ -554,6 +780,17 @@ def mark_live_pipeline_not_applicable(
 def record_api_call(event: Dict[str, Any]) -> None:
     try:
         line = json.dumps(event, default=str, ensure_ascii=False)
+
+        if use_supabase_backend():
+            try:
+                supabase_request(
+                    "POST",
+                    "antirot_request_events",
+                    json_body=supabase_event_row(event),
+                    prefer="return=minimal",
+                )
+            except Exception as exc:
+                print(f"[api_tracking_supabase_error] {exc}")
 
         if API_CALL_LOG_PATH:
             log_path = os.path.abspath(API_CALL_LOG_PATH)
@@ -912,4 +1149,4 @@ def classify(req: VideoRequest, request: Request):
 
 @app.get("/health")
 def health_check():
-    return {"status": "alive"}
+    return {"status": "alive", "data_backend": DATA_BACKEND}

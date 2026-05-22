@@ -5,7 +5,7 @@
 **Stop doomscrolling. Start learning.**
 
 [![Install](https://img.shields.io/badge/Install-antirot.in-FF6B6B?style=for-the-badge&logo=googlechrome&logoColor=white)](https://antirot.in)
-[![Version](https://img.shields.io/badge/Version-0.6-FF6B6B?style=for-the-badge)](#version-log)
+![Version](https://img.shields.io/badge/Version-0.6-FF6B6B?style=for-the-badge)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 
@@ -100,22 +100,6 @@ Successful default-rule classifications are cached in SQLite at `CLASSIFICATION_
 For cache hits, request logs mark live-pipeline-only fields such as Supadata, OpenRouter, and cache-write timings as `na`.
 
 The request log is append-only: every event is added as one JSON object line to the same `api_call_events.jsonl` file. For larger logs, use `python Server/tools/request_log_summary.py` for a streaming summary or `python Server/tools/request_log_to_sqlite.py` to import the log into `data/api_request_events.sqlite3` for SQL queries and cache analysis.
-
----
-
-## Version Log
-
-| Version | Milestone |
-|:-------:|:----------|
-| `v0.1` | Prototype stage and initial prompt engineering |
-| `v0.2` | Backend deployment to cloud infrastructure |
-| `v0.3` | Migrated extraction dependency from yt-dlp to Supadata API |
-| `v0.4` | Completed client extension and stability patches for pre-beta release |
-| `v0.5` | Custom instructions — users can now write per-session override rules directly in the extension popup |
-| `v0.6` | UI Blocking — configurable YouTube cleanup controls, presets, and collapsible rules & exceptions |
-| `v0.7` | Server-side SQLite classification cache to avoid repeat Supadata/OpenRouter calls |
-
----
 
 ## Upcoming Features
 
