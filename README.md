@@ -17,6 +17,33 @@
 
 ---
 
+## Privacy & Verification, In Plain English
+
+Anti-Rot has a user verification system to reduce bot abuse, scraping, and DDoS-style attacks. That system is **not** an identity system.
+
+I literally do not know who is using Anti-Rot.
+
+The verification framework uses a random, anonymous install ID and install token so the server can tell that a request came from a real installed client instead of an automated bot. That is it. The token is not your name, email, Google account, YouTube account, Chrome profile, location, demographic info, or anything that can tell me who you are.
+
+What Anti-Rot does **not** collect for verification:
+
+- No names
+- No email addresses
+- No Google or YouTube account IDs
+- No Chrome profile identity
+- No phone numbers
+- No payment info
+- No advertising IDs
+- No analytics profile to track you as a person
+
+The raw install token is not stored on the server. The server stores only a SHA-256 hash of the token and checks future requests against that hash. In normal-person terms: Anti-Rot keeps enough information to verify "this looks like the same anonymous install," not "this is a specific human being."
+
+For classification to work, the API receives the YouTube URL you ask it to classify and any custom instructions you choose to send. Operational logs may include request metadata needed to run, debug, rate-limit, and protect the service. That data is not connected to a real-world identity, and it is not used to build a personal profile.
+
+The purpose of verification is security. It exists to keep the service usable under abuse, not to identify users.
+
+---
+
 ## Architecture
 
 ```
@@ -91,9 +118,13 @@ uvicorn server:app --reload --port 8000
 |--------|------|-------|--------|-------------|
 | `GET` | `/health` | — | `{"status": "alive"}` | Health check |
 | `POST` | `/installs/register` | JSON: `{"requested_install_id": "...", "client": {...}}` | JSON: `{"install_id": "...", "install_token": "..."}` | Creates a server-issued install credential pair; can attach a token to an older local install ID during migration |
-| `POST` | `/classify` | JSON: `{"url": "...", "instructions": "...", "install_id": "...", "install_token": "..."}` | JSON: `{"category": 0/1}` | Verifies install credentials, executes classification, and writes a tracking event |
+| `POST` | `/classify` | JSON: `{"url": "...", "instructions": "...", "install_id": "...", "install_token": "..."}` | JSON: `{"category": 0/1}` | Verifies anonymous install credentials, executes classification, and writes an operational event |
 
-Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted `install_id` and `install_token` match before checking the classification cache or running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`. Request tracking is logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event includes request metadata, client IP/proxy headers, URL, instructions, install ID, install token hash, YouTube video ID, cache status, Supadata/OpenRouter timings, result category, and failure details. Raw install tokens and account identifiers are not logged.
+Install records are stored at `INSTALL_REGISTRY_PATH`. The server stores only a SHA-256 hash of each `install_token`, then verifies that the submitted anonymous `install_id` and `install_token` match before checking the classification cache or running Supadata/OpenRouter. Existing installs keep their stored ID/token across extension autoupdates; older installs that have an ID but no token request a token for that same ID once. If credentials do not match, `/classify` returns `{"detail": "User not found."}`.
+
+This verification data does not identify a person. Anti-Rot does not collect names, emails, Google accounts, YouTube accounts, Chrome profile identities, phone numbers, payment details, advertising IDs, or any other user identity for verification. The install token exists only to distinguish an anonymous real install from automated abuse, and raw install tokens are never logged.
+
+Operational API events are logged as JSONL to `API_CALL_LOG_PATH` and, by default, stdout for AWS logs. Each classify event may include request metadata, client IP/proxy headers, URL, instructions, anonymous install ID, install token hash, YouTube video ID, cache status, Supadata/OpenRouter timings, result category, and failure details. These logs exist to run, debug, rate-limit, and protect the service. They are not tied to a real-world identity, and account identifiers are not logged because Anti-Rot does not collect them.
 
 Successful default-rule classifications are cached in SQLite at `CLASSIFICATION_CACHE_DB_PATH` (`data/video_classification_cache.sqlite3` by default). The cache stores the video URL, transcript, and category. If a matching video is already cached and the request has no custom instructions, `/classify` returns the cached category and does not call Supadata or OpenRouter. If custom instructions are present, the server reuses a cached transcript when available, but still calls OpenRouter and does not write the custom-instruction result back into the shared cache.
 
