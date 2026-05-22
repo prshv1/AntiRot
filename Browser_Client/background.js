@@ -29,6 +29,10 @@ const DEFAULT_FOCUS_SETTINGS = {
   hideEndScreen: false,
   hideSearchDistractions: false,
 };
+const DEFAULT_COLLAPSED_SECTIONS = {
+  uiBlocking: false,
+  rules: true,
+};
 
 // Cache to avoid re-classifying the same video
 const classificationCache = new Map();
@@ -157,6 +161,7 @@ chrome.runtime.onInstalled.addListener(() => {
     allowedVideos: 0,
     customInstructions: '',
     focusSettings: DEFAULT_FOCUS_SETTINGS,
+    collapsedSections: DEFAULT_COLLAPSED_SECTIONS,
   });
   console.log('[AntiRot] Extension installed, shield active.');
 });

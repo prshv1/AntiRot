@@ -66,18 +66,27 @@
     <!-- Divider -->
     <div class="divider"></div>
 
-    <!-- Focus Controls Section -->
-    <div class="focus-section">
-      <div class="focus-header">
-        <span class="focus-title">Focus Controls</span>
-        <div class="focus-presets">
-          <button class="preset-btn" data-focus-preset="off">Off</button>
-          <button class="preset-btn" data-focus-preset="balanced">Balanced</button>
-          <button class="preset-btn" data-focus-preset="strict">Strict</button>
-        </div>
-      </div>
+    <!-- UI Blocking Section -->
+    <div class="settings-section" data-section="uiBlocking">
+      <button class="section-toggle" type="button" data-section-toggle="uiBlocking" aria-expanded="true">
+        <span class="section-title">UI Blocking</span>
+        <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
 
-      <div class="focus-controls">
+      <div class="section-body" data-section-body="uiBlocking">
+        <div class="presets-section">
+          <span class="presets-title">Presets</span>
+          <div class="focus-presets">
+            <button class="preset-btn" data-focus-preset="off">Off</button>
+            <button class="preset-btn" data-focus-preset="balanced">Balanced</button>
+            <button class="preset-btn" data-focus-preset="strict">Strict</button>
+            <button class="preset-btn preset-btn-custom" data-focus-preset="custom">Custom</button>
+          </div>
+        </div>
+
+        <div class="focus-controls">
         <label class="focus-row">
           <span class="focus-name">Home Feed</span>
           <span class="toggle-switch toggle-switch-sm">
@@ -269,69 +278,74 @@
             <span class="toggle-slider"></span>
           </span>
         </label>
+        </div>
       </div>
     </div>
 
     <!-- Divider -->
     <div class="divider"></div>
 
-    <!-- Whitelist Section -->
-    <div class="whitelist-section">
-      <div class="whitelist-header">
-        <span class="whitelist-title">Whitelisted Channels</span>
+    <!-- Rules & Exceptions Section -->
+    <div class="settings-section rules-section collapsed" data-section="rules">
+      <button class="section-toggle" type="button" data-section-toggle="rules" aria-expanded="false">
+        <span class="section-title">Rules & Exceptions</span>
         <span class="whitelist-count" id="whitelistCount">0</span>
+        <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      <div class="section-body" data-section-body="rules">
+        <div class="rules-block">
+          <span class="rules-title">Whitelisted Channels</span>
+          <div class="whitelist-input-row">
+            <input
+              type="text"
+              id="channelInput"
+              class="channel-input"
+              placeholder="Channel name..."
+              spellcheck="false"
+              autocomplete="off"
+            >
+            <button id="addChannelBtn" class="add-btn" title="Add channel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="whitelist-items" id="whitelistContainer">
+            <!-- Channels injected here -->
+          </div>
+
+          <p class="whitelist-hint" id="emptyHint">No channels whitelisted yet</p>
+        </div>
+
+        <div class="rules-block">
+          <div class="instructions-header">
+            <span class="instructions-title">Custom Instructions</span>
+            <button id="saveInstructionsBtn" class="save-instructions-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Save
+            </button>
+          </div>
+          <textarea
+            id="instructionsInput"
+            class="instructions-textarea"
+            placeholder="e.g. Block all gaming videos, allow coding tutorials..."
+            spellcheck="false"
+            rows="3"
+          ></textarea>
+        </div>
       </div>
-
-      <div class="whitelist-input-row">
-        <input
-          type="text"
-          id="channelInput"
-          class="channel-input"
-          placeholder="Channel name..."
-          spellcheck="false"
-          autocomplete="off"
-        >
-        <button id="addChannelBtn" class="add-btn" title="Add channel">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="whitelist-items" id="whitelistContainer">
-        <!-- Channels injected here -->
-      </div>
-
-      <p class="whitelist-hint" id="emptyHint">No channels whitelisted yet</p>
-    </div>
-
-    <!-- Divider -->
-    <div class="divider"></div>
-
-    <!-- Custom Instructions Section -->
-    <div class="instructions-section">
-      <div class="instructions-header">
-        <span class="instructions-title">Custom Instructions</span>
-        <button id="saveInstructionsBtn" class="save-instructions-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          Save
-        </button>
-      </div>
-      <textarea
-        id="instructionsInput"
-        class="instructions-textarea"
-        placeholder="e.g. Block all gaming videos, allow coding tutorials..."
-        spellcheck="false"
-        rows="3"
-      ></textarea>
     </div>
 
     <!-- Footer -->
     <div class="footer">
-      <span class="footer-text">v0.5.0 — <a href="https://linktr.ee/prshv1" target="_blank" class="footer-link">@prshv1</a></span>
+      <span class="footer-text">v0.6 — <a href="https://linktr.ee/prshv1" target="_blank" class="footer-link">@prshv1</a></span>
     </div>
   </div>
 

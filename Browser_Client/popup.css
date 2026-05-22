@@ -229,6 +229,8 @@ body.light .icon-sun {
   width: 48px;
   height: 26px;
   cursor: pointer;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .toggle-switch input {
@@ -269,6 +271,24 @@ body.light .icon-sun {
   transform: translateY(-50%) translateX(22px);
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.toggle-switch-sm {
+  width: 38px;
+  height: 22px;
+}
+
+.toggle-switch-sm .toggle-slider {
+  border-radius: 11px;
+}
+
+.toggle-switch-sm .toggle-slider::before {
+  width: 14px;
+  height: 14px;
+}
+
+.toggle-switch-sm input:checked + .toggle-slider::before {
+  transform: translateY(-50%) translateX(16px);
 }
 
 /* ── Stats ── */
@@ -314,35 +334,79 @@ body.light .icon-sun {
   transition: color 0.4s ease;
 }
 
-
-.toggle-switch-sm {
-  width: 38px;
-  height: 22px;
-}
-
-.toggle-switch-sm .toggle-slider {
-  border-radius: 11px;
-}
-
-.toggle-switch-sm .toggle-slider::before {
-  width: 14px;
-  height: 14px;
-}
-
-.toggle-switch-sm input:checked + .toggle-slider::before {
-  transform: translateY(-50%) translateX(16px);
-}
-
-/* ── Focus Controls ── */
-.focus-section {
+/* ── Collapsible Sections ── */
+.settings-section {
   margin-top: 0;
 }
 
-.focus-header {
+.section-toggle {
+  width: 100%;
+  min-height: 38px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s ease;
+}
+
+.section-toggle:hover {
+  border-color: var(--border-hover);
+}
+
+.section-title {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.4s ease;
+}
+
+.section-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+
+.settings-section.collapsed .section-chevron {
+  transform: rotate(-90deg);
+}
+
+.section-body {
+  margin-top: 10px;
+}
+
+.settings-section.collapsed .section-body {
+  display: none;
+}
+
+/* ── UI Blocking ── */
+.presets-section {
   margin-bottom: 10px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.presets-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: color 0.4s ease;
 }
 
 .focus-title {
@@ -354,7 +418,7 @@ body.light .icon-sun {
 
 .focus-presets {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
@@ -377,6 +441,17 @@ body.light .icon-sun {
   color: var(--accent);
   background: var(--accent-soft);
   box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.preset-btn-custom {
+  cursor: default;
+}
+
+.preset-btn-custom:not(.active):hover {
+  border-color: var(--border);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  box-shadow: none;
 }
 
 .focus-controls {
@@ -430,8 +505,23 @@ body.light .icon-sun {
 }
 
 /* ── Whitelist ── */
-.whitelist-section {
+.rules-section {
   margin-top: 0;
+}
+
+.rules-block + .rules-block {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.rules-title {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: color 0.4s ease;
 }
 
 .whitelist-header {

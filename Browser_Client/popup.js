@@ -56,9 +56,15 @@ const instructionsInput = document.getElementById('instructionsInput');
 const saveInstructionsBtn = document.getElementById('saveInstructionsBtn');
 const focusToggles = Array.from(document.querySelectorAll('.focus-toggle'));
 const presetButtons = Array.from(document.querySelectorAll('.preset-btn'));
+const sectionToggles = Array.from(document.querySelectorAll('[data-section-toggle]'));
 
 const FOCUS_SETTINGS_KEY = 'focusSettings';
 const FOCUS_LEGACY_KEYS = new Set(['hideSidebar', 'hideEndScreen', 'hideSearchDistractions']);
+const COLLAPSED_SECTIONS_KEY = 'collapsedSections';
+const DEFAULT_COLLAPSED_SECTIONS = {
+  uiBlocking: false,
+  rules: true,
+};
 const DEFAULT_FOCUS_SETTINGS = {
   hideHomeFeed: false,
   redirectHomeToSubscriptions: false,
@@ -91,74 +97,105 @@ const DEFAULT_FOCUS_SETTINGS = {
 const FOCUS_PRESETS = {
   off: { ...DEFAULT_FOCUS_SETTINGS },
   balanced: {
-  hideHomeFeed: false,
-  redirectHomeToSubscriptions: false,
-  hideVideoSidebar: true,
-  hideRecommended: true,
-  hideLiveChat: false,
-  hidePlaylist: false,
-  hideFundraiser: false,
-  hideEndScreenFeed: true,
-  hideEndScreenCards: true,
-  hideShorts: true,
-  redirectShorts: false,
-  hideComments: false,
-  hideMixes: false,
-  hideMerchOffers: false,
-  hideVideoInfo: false,
-  hideTopHeader: false,
-  hideNotifications: false,
-  hideInaptSearchResults: true,
-  hideExploreTrending: false,
-  hideMoreFromYouTube: false,
-  hideSubscriptions: false,
-  disableAutoplay: true,
-  disableAnnotations: true,
-  minimalWatchPage: false,
-  hideSidebar: false,
-  hideEndScreen: false,
-  hideSearchDistractions: false,
-},
+    ...DEFAULT_FOCUS_SETTINGS,
+    hideVideoSidebar: true,
+    hideRecommended: true,
+    hideShorts: true,
+    hideEndScreenFeed: true,
+    hideEndScreenCards: true,
+    disableAutoplay: true,
+    disableAnnotations: true,
+    hideInaptSearchResults: true,
+  },
   strict: {
-  hideHomeFeed: true,
-  redirectHomeToSubscriptions: true,
-  hideVideoSidebar: true,
-  hideRecommended: true,
-  hideLiveChat: true,
-  hidePlaylist: true,
-  hideFundraiser: true,
-  hideEndScreenFeed: true,
-  hideEndScreenCards: true,
-  hideShorts: true,
-  redirectShorts: true,
-  hideComments: true,
-  hideMixes: true,
-  hideMerchOffers: true,
-  hideVideoInfo: true,
-  hideTopHeader: false,
-  hideNotifications: true,
-  hideInaptSearchResults: true,
-  hideExploreTrending: true,
-  hideMoreFromYouTube: true,
-  hideSubscriptions: false,
-  disableAutoplay: true,
-  disableAnnotations: true,
-  minimalWatchPage: true,
-  hideSidebar: false,
-  hideEndScreen: false,
-  hideSearchDistractions: false,
-},
+    ...DEFAULT_FOCUS_SETTINGS,
+    hideHomeFeed: true,
+    redirectHomeToSubscriptions: true,
+    hideVideoSidebar: true,
+    hideRecommended: true,
+    hideLiveChat: true,
+    hidePlaylist: true,
+    hideFundraiser: true,
+    hideEndScreenFeed: true,
+    hideEndScreenCards: true,
+    hideShorts: true,
+    redirectShorts: true,
+    hideComments: true,
+    hideMixes: true,
+    hideMerchOffers: true,
+    hideVideoInfo: true,
+    hideTopHeader: false,
+    hideNotifications: true,
+    hideInaptSearchResults: true,
+    hideExploreTrending: true,
+    hideMoreFromYouTube: true,
+    hideSubscriptions: false,
+    disableAutoplay: true,
+    disableAnnotations: true,
+    minimalWatchPage: true,
+    hideSidebar: false,
+    hideEndScreen: false,
+    hideSearchDistractions: false,
+  },
 };
-
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
+  loadSectionState();
   loadState();
   loadStats();
   loadWhitelist();
   loadTheme();
   loadInstructions();
   loadFocusSettings();
+});
+
+// ── Collapsible Sections ──
+function loadSectionState() {
+  chrome.storage.local.get([COLLAPSED_SECTIONS_KEY], (data) => {
+    renderSectionState(normalizeSectionState(data[COLLAPSED_SECTIONS_KEY]));
+  });
+}
+
+function normalizeSectionState(savedState) {
+  const state = {
+    ...DEFAULT_COLLAPSED_SECTIONS,
+    ...(savedState || {}),
+  };
+
+  if (savedState && savedState.rules === undefined) {
+    state.rules = Boolean(savedState.whitelist) && Boolean(savedState.customInstructions);
+  }
+
+  return state;
+}
+
+function renderSectionState(state) {
+  sectionToggles.forEach((button) => {
+    const sectionName = button.dataset.sectionToggle;
+    const section = document.querySelector(`[data-section="${sectionName}"]`);
+    const isCollapsed = Boolean(state[sectionName]);
+
+    section?.classList.toggle('collapsed', isCollapsed);
+    button.setAttribute('aria-expanded', String(!isCollapsed));
+  });
+}
+
+function toggleSection(sectionName) {
+  chrome.storage.local.get([COLLAPSED_SECTIONS_KEY], (data) => {
+    const state = normalizeSectionState(data[COLLAPSED_SECTIONS_KEY]);
+    state[sectionName] = !Boolean(state[sectionName]);
+
+    chrome.storage.local.set({ [COLLAPSED_SECTIONS_KEY]: state }, () => {
+      renderSectionState(state);
+    });
+  });
+}
+
+sectionToggles.forEach((button) => {
+  button.addEventListener('click', () => {
+    toggleSection(button.dataset.sectionToggle);
+  });
 });
 
 // ── Toggle Logic ──
@@ -320,9 +357,12 @@ function renderFocusSettings(settings) {
 }
 
 function updatePresetState(settings) {
+  const matchedPreset = Object.entries(FOCUS_PRESETS).find(([, preset]) => (
+    focusSettingsEqual(settings, preset)
+  ))?.[0] || 'custom';
+
   presetButtons.forEach((button) => {
-    const preset = FOCUS_PRESETS[button.dataset.focusPreset];
-    button.classList.toggle('active', Boolean(preset) && focusSettingsEqual(settings, preset));
+    button.classList.toggle('active', button.dataset.focusPreset === matchedPreset);
   });
 }
 
