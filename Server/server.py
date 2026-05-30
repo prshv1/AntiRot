@@ -73,7 +73,7 @@ _classification_cache_lock = Lock()
 app = FastAPI(
     title="AntiRot API",
     description="YouTube video classifier",
-    version="0.6.2",
+    version="0.6.3",
 )
 
 app.add_middleware(
