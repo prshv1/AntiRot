@@ -34,9 +34,20 @@ const DEFAULT_COLLAPSED_SECTIONS = {
   uiBlocking: false,
   rules: true,
 };
+const LOCKDOWN_KEY = 'lockdown';
+const LOCKDOWN_SNAPSHOT_KEY = 'lockdownSnapshot';
+const MAX_LOCKDOWN_MINUTES = 24 * 60;
+const PROTECTED_SETTINGS_KEYS = [
+  'enabled',
+  'whitelist',
+  'customInstructions',
+  'focusSettings',
+  'theme',
+];
 
 // Cache to avoid re-classifying the same video when no custom rules are active
 const classificationCache = new Map();
+let isRestoringLockdownState = false;
 
 // ── Message Handler ──
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -46,12 +57,225 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'getState') {
-    chrome.storage.local.get(['enabled'], (data) => {
-      sendResponse({ enabled: data.enabled !== false });
-    });
+    handleGetState(sendResponse);
+    return true;
+  }
+
+  if (message.action === 'startLockdown') {
+    handleStartLockdown(message.durationMinutes, sendResponse);
+    return true;
+  }
+
+  if (message.action === 'getLockdownState') {
+    handleGetLockdownState(sendResponse);
     return true;
   }
 });
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || isRestoringLockdownState) return;
+  guardLockdownSettings(changes);
+});
+
+// ── Lockdown Mode ──
+async function handleGetState(sendResponse) {
+  const lockdownState = await getActiveLockdownState();
+  if (lockdownState.active) {
+    sendResponse({
+      enabled: true,
+      lockdown: lockdownState.lockdown,
+      lockdownRemainingMs: lockdownState.remainingMs,
+    });
+    return;
+  }
+
+  chrome.storage.local.get(['enabled'], (data) => {
+    sendResponse({ enabled: data.enabled !== false });
+  });
+}
+
+async function handleStartLockdown(durationMinutes, sendResponse) {
+  try {
+    const minutes = Number.parseInt(durationMinutes, 10);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_LOCKDOWN_MINUTES) {
+      sendResponse({ ok: false, error: 'invalid_duration' });
+      return;
+    }
+
+    const data = await getStorage(PROTECTED_SETTINGS_KEYS);
+    const now = Date.now();
+    const lockdown = {
+      startedAt: now,
+      activeUntil: now + minutes * 60 * 1000,
+      durationMinutes: minutes,
+    };
+    const snapshot = buildLockdownSnapshot(data);
+
+    await setStorage({
+      ...snapshot,
+      [LOCKDOWN_KEY]: lockdown,
+      [LOCKDOWN_SNAPSHOT_KEY]: snapshot,
+    });
+
+    notifyYoutubeTabs({ action: 'toggleChanged', enabled: true });
+    notifyYoutubeTabs({ action: 'focusSettingsChanged', settings: snapshot.focusSettings });
+    notifyYoutubeTabs({ action: 'themeChanged', theme: snapshot.theme });
+
+    sendResponse({
+      ok: true,
+      lockdown,
+      remainingMs: getRemainingLockdownMs(lockdown),
+    });
+  } catch (err) {
+    console.error('[AntiRot] Failed to start lockdown:', err);
+    sendResponse({ ok: false, error: 'lockdown_failed' });
+  }
+}
+
+async function handleGetLockdownState(sendResponse) {
+  const lockdownState = await getActiveLockdownState();
+  sendResponse({
+    active: lockdownState.active,
+    lockdown: lockdownState.lockdown,
+    remainingMs: lockdownState.remainingMs,
+  });
+}
+
+async function guardLockdownSettings(changes) {
+  const changedProtectedKeys = PROTECTED_SETTINGS_KEYS.filter((key) => changes[key]);
+  if (changedProtectedKeys.length === 0) return;
+
+  const lockdownState = await getActiveLockdownState();
+  if (!lockdownState.active) return;
+
+  const correction = {};
+  changedProtectedKeys.forEach((key) => {
+    const expected = getComparableProtectedValue(key, lockdownState.snapshot[key]);
+    const incoming = getComparableProtectedValue(key, changes[key].newValue);
+
+    if (!protectedValuesEqual(incoming, expected)) {
+      correction[key] = lockdownState.snapshot[key];
+    }
+  });
+
+  if (Object.keys(correction).length === 0) return;
+
+  isRestoringLockdownState = true;
+  try {
+    await setStorage(correction);
+  } finally {
+    isRestoringLockdownState = false;
+  }
+
+  if ('enabled' in correction) {
+    notifyYoutubeTabs({ action: 'toggleChanged', enabled: true });
+  }
+  if ('focusSettings' in correction) {
+    notifyYoutubeTabs({ action: 'focusSettingsChanged', settings: correction.focusSettings });
+  }
+  if ('theme' in correction) {
+    notifyYoutubeTabs({ action: 'themeChanged', theme: correction.theme });
+  }
+}
+
+async function getActiveLockdownState() {
+  const data = await getStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+  const lockdown = normalizeLockdown(data[LOCKDOWN_KEY]);
+
+  if (!lockdown) {
+    return { active: false, lockdown: null, snapshot: null, remainingMs: 0 };
+  }
+
+  const remainingMs = getRemainingLockdownMs(lockdown);
+  if (remainingMs <= 0) {
+    await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+    return { active: false, lockdown: null, snapshot: null, remainingMs: 0 };
+  }
+
+  return {
+    active: true,
+    lockdown,
+    snapshot: normalizeLockdownSnapshot(data[LOCKDOWN_SNAPSHOT_KEY]),
+    remainingMs,
+  };
+}
+
+function normalizeLockdown(lockdown) {
+  if (!lockdown || typeof lockdown !== 'object') return null;
+  const activeUntil = Number(lockdown.activeUntil);
+  const startedAt = Number(lockdown.startedAt);
+  const durationMinutes = Number(lockdown.durationMinutes);
+  if (!Number.isFinite(activeUntil) || activeUntil <= 0) return null;
+
+  return {
+    startedAt: Number.isFinite(startedAt) ? startedAt : Date.now(),
+    activeUntil,
+    durationMinutes: Number.isFinite(durationMinutes) ? durationMinutes : null,
+  };
+}
+
+function getRemainingLockdownMs(lockdown) {
+  if (!lockdown?.activeUntil) return 0;
+  return Math.max(0, Number(lockdown.activeUntil) - Date.now());
+}
+
+function buildLockdownSnapshot(data) {
+  return normalizeLockdownSnapshot({
+    ...data,
+    enabled: true,
+  });
+}
+
+function normalizeLockdownSnapshot(snapshot = {}) {
+  return {
+    enabled: true,
+    whitelist: Array.isArray(snapshot.whitelist) ? snapshot.whitelist : [],
+    customInstructions: snapshot.customInstructions || '',
+    focusSettings: normalizeFocusSettings(snapshot.focusSettings),
+    theme: snapshot.theme || 'dark',
+  };
+}
+
+function normalizeFocusSettings(settings) {
+  const normalized = {
+    ...DEFAULT_FOCUS_SETTINGS,
+    ...(settings || {}),
+  };
+
+  if (settings?.hideSidebar) normalized.hideVideoSidebar = true;
+  if (settings?.hideEndScreen) {
+    normalized.hideEndScreenFeed = true;
+    normalized.hideEndScreenCards = true;
+  }
+  if (settings?.hideSearchDistractions) normalized.hideInaptSearchResults = true;
+
+  normalized.hideSidebar = normalized.hideVideoSidebar;
+  normalized.hideEndScreen = normalized.hideEndScreenFeed || normalized.hideEndScreenCards;
+  normalized.hideSearchDistractions = normalized.hideInaptSearchResults;
+
+  return normalized;
+}
+
+function getComparableProtectedValue(key, value) {
+  if (key === 'enabled') return value !== false;
+  if (key === 'whitelist') return Array.isArray(value) ? value : [];
+  if (key === 'customInstructions') return value || '';
+  if (key === 'focusSettings') return normalizeFocusSettings(value);
+  if (key === 'theme') return value || 'dark';
+  return value;
+}
+
+function protectedValuesEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function notifyYoutubeTabs(message) {
+  chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+    tabs.forEach((tab) => {
+      chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+    });
+  });
+}
 
 // ── Classification Logic ──
 async function handleClassification(videoUrl, tabId, sendResponse) {
@@ -63,6 +287,13 @@ async function handleClassification(videoUrl, tabId, sendResponse) {
       'installId',
       'installToken',
     ]);
+    const lockdownState = await getActiveLockdownState();
+    if (lockdownState.active && data.enabled === false) {
+      data.enabled = true;
+      await setStorage({ enabled: true });
+      notifyYoutubeTabs({ action: 'toggleChanged', enabled: true });
+    }
+
     if (data.enabled === false) {
       sendResponse({ action: 'allowed', reason: 'extension_disabled' });
       return;
@@ -269,8 +500,18 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     'customInstructions',
     'focusSettings',
     'collapsedSections',
+    'theme',
+    LOCKDOWN_KEY,
+    LOCKDOWN_SNAPSHOT_KEY,
   ]);
   let installCredentials = null;
+  const existingLockdown = normalizeLockdown(existing[LOCKDOWN_KEY]);
+  const lockdownIsActive = Boolean(
+    existingLockdown && getRemainingLockdownMs(existingLockdown) > 0
+  );
+  const lockdownSnapshot = lockdownIsActive
+    ? normalizeLockdownSnapshot(existing[LOCKDOWN_SNAPSHOT_KEY])
+    : null;
 
   try {
     installCredentials = await getOrCreateInstallCredentials(
@@ -297,6 +538,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
           }
         : {}),
     });
+    await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
   } else {
     await setStorage({
       ...(installCredentials
@@ -305,21 +547,42 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
             installToken: installCredentials.installToken,
           }
         : {}),
-      enabled: existing.enabled !== undefined ? existing.enabled : true,
-      whitelist: existing.whitelist || [],
+      enabled: lockdownSnapshot ? true : (existing.enabled !== undefined ? existing.enabled : true),
+      whitelist: lockdownSnapshot ? lockdownSnapshot.whitelist : (existing.whitelist || []),
       blockedVideos: existing.blockedVideos || 0,
       allowedVideos: existing.allowedVideos || 0,
-      customInstructions: existing.customInstructions || '',
-      focusSettings: {
-        ...DEFAULT_FOCUS_SETTINGS,
-        ...(existing.focusSettings || {}),
-      },
+      customInstructions: lockdownSnapshot
+        ? lockdownSnapshot.customInstructions
+        : (existing.customInstructions || ''),
+      focusSettings: lockdownSnapshot
+        ? lockdownSnapshot.focusSettings
+        : {
+            ...DEFAULT_FOCUS_SETTINGS,
+            ...(existing.focusSettings || {}),
+          },
       collapsedSections: {
         ...DEFAULT_COLLAPSED_SECTIONS,
         ...(existing.collapsedSections || {}),
       },
+      ...(lockdownSnapshot
+        ? {
+            theme: lockdownSnapshot.theme,
+            [LOCKDOWN_KEY]: existingLockdown,
+            [LOCKDOWN_SNAPSHOT_KEY]: lockdownSnapshot,
+          }
+        : {}),
     });
+
+    if (!lockdownSnapshot) {
+      await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+    }
   }
 
   console.log('[AntiRot] Extension installed, shield active.');
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  getActiveLockdownState().catch((err) => {
+    console.warn('[AntiRot] Lockdown startup check failed:', err);
+  });
 });

@@ -58,6 +58,36 @@
       </div>
     </section>
 
+    <section class="lockdown-panel" id="lockdownPanel" aria-live="polite">
+      <div class="lockdown-header">
+        <span class="section-heading">
+          <span class="section-kicker">Hard Timer</span>
+          <span class="section-title">Lockdown</span>
+        </span>
+        <span class="lockdown-countdown" id="lockdownCountdown">Ready</span>
+      </div>
+
+      <div class="lockdown-controls">
+        <label class="lockdown-duration-label" for="lockdownDuration">
+          <input
+            type="number"
+            id="lockdownDuration"
+            class="lockdown-duration-input"
+            min="1"
+            max="1440"
+            step="1"
+            value="25"
+          >
+          <span>min</span>
+        </label>
+        <button id="startLockdownBtn" class="lockdown-start-btn" type="button">Start Lockdown</button>
+      </div>
+
+      <p class="lockdown-hint" id="lockdownHint">
+        Locks AntiRot on and freezes settings until the timer ends.
+      </p>
+    </section>
+
     <section class="settings-section" data-section="uiBlocking">
       <button class="section-toggle" type="button" data-section-toggle="uiBlocking" aria-expanded="true">
         <span class="section-heading">

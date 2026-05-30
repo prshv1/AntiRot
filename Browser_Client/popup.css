@@ -206,6 +206,12 @@ button {
   border-color: var(--border);
 }
 
+.status-pill.locked {
+  color: var(--amber);
+  background: rgba(243, 201, 105, 0.12);
+  border-color: rgba(243, 201, 105, 0.34);
+}
+
 .power-toggle {
   position: relative;
   display: inline-grid;
@@ -261,6 +267,18 @@ button {
 .power-toggle input:focus-visible + .power-toggle-text {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.power-toggle input:disabled,
+.power-toggle input:disabled + .power-toggle-text {
+  cursor: not-allowed;
+}
+
+.power-toggle input:disabled + .power-toggle-text {
+  color: var(--amber);
+  background: var(--surface-sunken);
+  border-color: rgba(243, 201, 105, 0.38);
+  box-shadow: 0 0 0 3px rgba(243, 201, 105, 0.08), var(--shadow-soft);
 }
 
 .power-state-off,
@@ -473,6 +491,156 @@ body.light .icon-sun {
   color: var(--text-secondary);
 }
 
+.lockdown-panel {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, var(--surface-raised), var(--surface-sunken)),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.lockdown-panel::after {
+  content: '';
+  position: absolute;
+  inset: auto 12px 10px 12px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--text-muted), transparent);
+  opacity: 0.28;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.lockdown-panel.is-active {
+  border-color: rgba(243, 201, 105, 0.42);
+  box-shadow: 0 0 0 3px rgba(243, 201, 105, 0.08), var(--shadow-soft);
+}
+
+.lockdown-panel.is-active::after {
+  background: linear-gradient(90deg, var(--amber), transparent);
+  opacity: 0.85;
+}
+
+.lockdown-header,
+.lockdown-controls {
+  position: relative;
+  z-index: 1;
+}
+
+.lockdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lockdown-countdown {
+  flex-shrink: 0;
+  min-width: 74px;
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.lockdown-panel.is-active .lockdown-countdown {
+  color: var(--amber);
+  border-color: rgba(243, 201, 105, 0.38);
+}
+
+.lockdown-controls {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+}
+
+.lockdown-duration-label {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lockdown-duration-input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lockdown-duration-input::-webkit-inner-spin-button,
+.lockdown-duration-input::-webkit-outer-spin-button {
+  margin: 0;
+}
+
+.lockdown-start-btn {
+  height: 38px;
+  color: white;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 16px var(--accent-glow);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.lockdown-start-btn:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 0 22px var(--accent-glow);
+}
+
+.lockdown-start-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.lockdown-hint {
+  position: relative;
+  z-index: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.lockdown-panel.is-active .lockdown-hint {
+  color: var(--text-secondary);
+}
+
+.lockdown-panel.is-active .lockdown-start-btn,
+.lockdown-panel.is-active .lockdown-duration-label {
+  border-color: rgba(243, 201, 105, 0.28);
+}
+
 .settings-section + .settings-section {
   margin-top: 10px;
 }
@@ -606,6 +774,30 @@ body.light .icon-sun {
   box-shadow: none;
 }
 
+.preset-btn:disabled,
+.lockdown-start-btn:disabled,
+.theme-toggle:disabled,
+.add-btn:disabled,
+.save-instructions-btn:disabled,
+.remove-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+  box-shadow: none;
+}
+
+.preset-btn:disabled:hover,
+.lockdown-start-btn:disabled:hover,
+.theme-toggle:disabled:hover,
+.add-btn:disabled:hover,
+.save-instructions-btn:disabled:hover,
+.remove-btn:disabled:hover {
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
 .focus-controls {
   max-height: 224px;
   display: flex;
@@ -671,6 +863,16 @@ body.light .control-group-title {
 .focus-row:hover {
   border-color: var(--border-hover);
   transform: translateX(2px);
+}
+
+.focus-row:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.focus-row:has(input:disabled):hover {
+  border-color: var(--border);
+  transform: none;
 }
 
 .focus-row:has(input:checked) {
