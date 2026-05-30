@@ -101,15 +101,19 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Other")
+                    Text("Other Detected Browsers")
                         .font(.subheadline)
                         .fontWeight(.semibold)
 
                     if otherTargets.isEmpty {
-                        Text("No extra Chromium browsers detected. Install one, then refresh.")
+                        Text("No extra browser apps found. Web apps like Spotify and Todoist are ignored here.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
+                        Text("These are apps that look like real Chromium browsers. Choose only the ones you want Antirot to protect.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
                         ForEach(otherTargets) { target in
                             browserToggle(for: target)
                         }
@@ -499,10 +503,14 @@ enum BrowserDiscovery {
         info: [String: Any],
         displayName: String
     ) -> Bool {
-        hasChromiumPolicyManifest(appURL: appURL)
-            || hasChromiumFrameworkResources(appURL: appURL)
-            || declaresChromiumDocumentType(info: info)
-            || browserishName(displayName)
+        let hasPolicyManifest = hasChromiumPolicyManifest(appURL: appURL)
+        let handlesChromeExtensions = declaresChromiumDocumentType(info: info)
+        let hasBrowserEngine = hasChromiumFrameworkResources(appURL: appURL)
+        let nameLooksLikeBrowser = browserishName(displayName)
+
+        return hasPolicyManifest
+            || handlesChromeExtensions
+            || (hasBrowserEngine && nameLooksLikeBrowser)
     }
 
     private static func hasChromiumPolicyManifest(appURL: URL) -> Bool {

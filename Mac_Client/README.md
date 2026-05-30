@@ -8,6 +8,7 @@ It is not the full productivity suite yet. Right now it has one job: help lockdo
 
 - Finds common Chromium browsers like Chrome, Brave, Edge, Helium, Arc, Vivaldi, and Opera.
 - Tries to detect other Chromium browsers already installed on the Mac.
+- Ignores normal web apps like Spotify, Todoist, and Notion.
 - Lets the user choose which browsers to protect.
 - Asks macOS for admin permission.
 - Tells those browsers to keep the Antirot extension installed.
