@@ -5,6 +5,7 @@ import SwiftUI
 private let antiRotExtensionID = "emlpideklhedelfijihmafgnekgloddk"
 private let chromeWebStoreUpdateURL = "https://clients2.google.com/service/update2/crx"
 private let antiRotPolicyValue = "\(antiRotExtensionID);\(chromeWebStoreUpdateURL)"
+private let nativeHostName = "in.antirot.nativehost"
 
 @main
 struct AntirotApp: App {
@@ -50,6 +51,7 @@ struct ContentView: View {
                 } else {
                     selectedTargetIDs.subtract(allIDs)
                 }
+                saveSelectedBrowserChoices()
             }
         )
     }
@@ -81,7 +83,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("System lockdown")
                     .font(.headline)
-                Text("This applies browser policy that force-installs Antirot from the Chrome Web Store. While the policy is present, the browser UI will not let you disable or remove the extension.")
+                Text("When lockdown is on, Antirot can ask selected browsers to keep the extension installed and block changes from the extensions page.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -150,8 +152,9 @@ struct ContentView: View {
             .font(.callout)
         }
         .padding(24)
-            .onAppear {
+        .onAppear {
             refreshStatus()
+            installBrowserLink()
         }
     }
 
@@ -164,6 +167,7 @@ struct ContentView: View {
                 } else {
                     selectedTargetIDs.remove(target.id)
                 }
+                saveSelectedBrowserChoices()
             }
         )) {
             HStack {
@@ -222,7 +226,7 @@ struct ContentView: View {
                 await MainActor.run {
                     savedState = state
                     refreshStatus()
-                    statusText = "Protection is on. Remove it here when your Antirot lockdown is done."
+                    statusText = "Protection is on. The extension can also do this automatically during lockdown."
                     isWorking = false
                 }
             } catch {
@@ -256,10 +260,7 @@ struct ContentView: View {
                     try PolicyManager.removeProtection(from: targets)
                 }.value
 
-                try StateStore.save(.empty)
-
                 await MainActor.run {
-                    savedState = .empty
                     refreshStatus()
                     statusText = "Protection was removed. Restart the browser if the extensions page still looks managed."
                     isWorking = false
@@ -279,12 +280,36 @@ struct ContentView: View {
         )
         discoveredTargets = detected
 
-        let state = (try? StateStore.load()) ?? .empty
-        savedState = state
+        if let state = try? StateStore.load() {
+            savedState = state
+            selectedTargetIDs = Set(
+                availableTargets
+                    .filter { state.policyDomains.contains($0.policyDomain) }
+                    .map(\.id)
+            )
+        } else {
+            saveSelectedBrowserChoices()
+        }
 
-        let domains = availableTargets.map(\.policyDomain) + state.policyDomains
+        let domains = availableTargets.map(\.policyDomain) + savedState.policyDomains
 
         installedPolicyDomains = PolicyManager.installedPolicyDomains(policyDomains: domains)
+    }
+
+    private func installBrowserLink() {
+        do {
+            let installedCount = try NativeMessagingInstaller.install()
+            statusText = "Ready. Browser link installed for \(installedCount) browser profiles."
+        } catch {
+            statusText = "Ready, but the browser link could not be installed: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveSelectedBrowserChoices() {
+        let policyDomains = selectedTargets.map(\.policyDomain)
+        let state = AppState(policyDomains: policyDomains)
+        try? StateStore.save(state)
+        savedState = state
     }
 
     private var appIconImage: NSImage {
@@ -603,6 +628,78 @@ enum BrowserDiscovery {
             "thorium",
             "ungoogled"
         ].contains { name.contains($0) }
+    }
+}
+
+enum NativeMessagingInstaller {
+    private static let manifestFileName = "\(nativeHostName).json"
+
+    static func install() throws -> Int {
+        let hostURL = try nativeHostURL()
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: [
+                "name": nativeHostName,
+                "description": "Antirot lockdown bridge",
+                "path": hostURL.path,
+                "type": "stdio",
+                "allowed_origins": [
+                    "chrome-extension://\(antiRotExtensionID)/"
+                ]
+            ],
+            options: [.prettyPrinted, .sortedKeys]
+        )
+
+        var installedCount = 0
+        for directory in nativeMessagingDirectories() {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let manifestURL = directory.appendingPathComponent(manifestFileName)
+            try manifestData.write(to: manifestURL, options: .atomic)
+            installedCount += 1
+        }
+
+        return installedCount
+    }
+
+    private static func nativeHostURL() throws -> URL {
+        guard let executableDirectory = Bundle.main.executableURL?.deletingLastPathComponent() else {
+            throw NativeMessagingInstallerError.missingExecutablePath
+        }
+
+        let hostURL = executableDirectory.appendingPathComponent("AntirotNativeHost")
+        guard FileManager.default.fileExists(atPath: hostURL.path) else {
+            throw NativeMessagingInstallerError.missingNativeHost(hostURL.path)
+        }
+
+        return hostURL
+    }
+
+    private static func nativeMessagingDirectories() -> [URL] {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return [
+            appSupport.appendingPathComponent("Google/Chrome/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("Google/Chrome for Testing/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("Google/ChromeForTesting/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("BraveSoftware/Brave-Browser/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("Microsoft Edge/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("Chromium/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("Vivaldi/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("com.operasoftware.Opera/NativeMessagingHosts", isDirectory: true),
+            appSupport.appendingPathComponent("net.imput.helium/NativeMessagingHosts", isDirectory: true)
+        ]
+    }
+}
+
+enum NativeMessagingInstallerError: LocalizedError {
+    case missingExecutablePath
+    case missingNativeHost(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingExecutablePath:
+            return "Could not find the app executable path."
+        case .missingNativeHost(let path):
+            return "Could not find the native host at \(path)."
+        }
     }
 }
 

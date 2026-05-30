@@ -1,6 +1,7 @@
 const API_BASE = 'https://api.antirot.in';
 const CLASSIFY_URL = `${API_BASE}/classify`;
 const REGISTER_INSTALL_URL = `${API_BASE}/installs/register`;
+const NATIVE_HOST_NAME = 'in.antirot.nativehost';
 const DEFAULT_FOCUS_SETTINGS = {
   hideHomeFeed: false,
   redirectHomeToSubscriptions: false,
@@ -121,10 +122,16 @@ async function handleStartLockdown(durationMinutes, sendResponse) {
     notifyYoutubeTabs({ action: 'focusSettingsChanged', settings: snapshot.focusSettings });
     notifyYoutubeTabs({ action: 'themeChanged', theme: snapshot.theme });
 
+    const nativeProtection = await syncNativeLockdown('lockdownStarted', lockdown);
+    if (!nativeProtection.ok) {
+      console.warn('[AntiRot] Mac lockdown protection was not applied:', nativeProtection.error);
+    }
+
     sendResponse({
       ok: true,
       lockdown,
       remainingMs: getRemainingLockdownMs(lockdown),
+      nativeProtection,
     });
   } catch (err) {
     console.error('[AntiRot] Failed to start lockdown:', err);
@@ -189,6 +196,10 @@ async function getActiveLockdownState() {
   const remainingMs = getRemainingLockdownMs(lockdown);
   if (remainingMs <= 0) {
     await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+    const nativeProtection = await syncNativeLockdown('lockdownEnded', lockdown);
+    if (!nativeProtection.ok) {
+      console.warn('[AntiRot] Mac lockdown protection was not removed:', nativeProtection.error);
+    }
     return { active: false, lockdown: null, snapshot: null, remainingMs: 0 };
   }
 
@@ -414,6 +425,40 @@ function setStorage(data) {
 function removeStorage(keys) {
   return new Promise((resolve) => {
     chrome.storage.local.remove(keys, resolve);
+  });
+}
+
+function syncNativeLockdown(action, lockdown = null) {
+  return new Promise((resolve) => {
+    if (!chrome.runtime?.sendNativeMessage) {
+      resolve({ ok: false, error: 'native_messaging_unavailable' });
+      return;
+    }
+
+    try {
+      chrome.runtime.sendNativeMessage(
+        NATIVE_HOST_NAME,
+        {
+          action,
+          lockdown,
+          extensionId: chrome.runtime.id,
+          extensionVersion: chrome.runtime.getManifest().version,
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({
+              ok: false,
+              error: chrome.runtime.lastError.message || 'native_message_failed',
+            });
+            return;
+          }
+
+          resolve(response || { ok: false, error: 'empty_native_response' });
+        }
+      );
+    } catch (err) {
+      resolve({ ok: false, error: err?.message || 'native_message_failed' });
+    }
   });
 }
 

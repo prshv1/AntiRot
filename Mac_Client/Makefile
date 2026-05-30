@@ -1,5 +1,6 @@
 APP_NAME := Antirot
 EXECUTABLE := Antirot
+NATIVE_HOST := AntirotNativeHost
 APP_DIR := dist/$(APP_NAME).app
 DMG_PATH := dist/$(APP_NAME).dmg
 ICON_SOURCE_DIR := ../Browser_Client/icons
@@ -32,6 +33,7 @@ app: icon build
 	mkdir -p "$(APP_DIR)/Contents/MacOS"
 	mkdir -p "$(APP_DIR)/Contents/Resources"
 	cp ".build/release/$(EXECUTABLE)" "$(APP_DIR)/Contents/MacOS/$(EXECUTABLE)"
+	cp ".build/release/$(NATIVE_HOST)" "$(APP_DIR)/Contents/MacOS/$(NATIVE_HOST)"
 	cp "Resources/Info.plist" "$(APP_DIR)/Contents/Info.plist"
 	cp "$(ICON_PATH)" "$(APP_DIR)/Contents/Resources/AppIcon.icns"
 	codesign --force --deep --sign - "$(APP_DIR)"

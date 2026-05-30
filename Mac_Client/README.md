@@ -10,18 +10,20 @@ It is not the full productivity suite yet. Right now it has one job: help lockdo
 - Tries to detect other Chromium browsers already installed on the Mac.
 - Ignores normal web apps like Spotify, Todoist, and Notion.
 - Lets the user choose which browsers to protect.
+- Installs a small local browser link when the Mac app is opened.
 - Asks macOS for admin permission.
 - Tells those browsers to keep the Antirot extension installed.
 - Lets the user remove that protection.
 
 ## What It Does Not Do Yet
 
-- It does not talk to the browser extension yet.
 - It does not decide when lockdown starts or ends. The extension owns that.
 - It does not run secretly in the background.
 - It does not create an unbreakable lock. A Mac admin can still undo it manually.
 
-Later, the browser extension should tell this Mac app when lockdown turns on or off. This app should stay focused on the Mac-side browser blocking work.
+The browser extension tells the Mac app when lockdown turns on or off. The Mac app stays focused on the Mac-side browser blocking work.
+
+After installing the Mac app, open it once. That gives the browser extension a local path to call during lockdown.
 
 ## Build The App
 

@@ -8,9 +8,11 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Antirot", targets: ["Antirot"])
+        .executable(name: "Antirot", targets: ["Antirot"]),
+        .executable(name: "AntirotNativeHost", targets: ["AntirotNativeHost"])
     ],
     targets: [
-        .executableTarget(name: "Antirot")
+        .executableTarget(name: "Antirot"),
+        .executableTarget(name: "AntirotNativeHost")
     ]
 )
