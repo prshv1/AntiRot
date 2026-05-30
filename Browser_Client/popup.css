@@ -64,8 +64,13 @@ body.light {
   color-scheme: light;
 }
 
+html,
 body {
   width: 376px;
+  min-width: 376px;
+}
+
+body {
   min-height: 520px;
   background:
     linear-gradient(150deg, rgba(255, 255, 255, 0.05), transparent 34%),
