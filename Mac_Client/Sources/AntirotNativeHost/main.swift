@@ -28,17 +28,24 @@ struct AntirotNativeHost {
         case "ping":
             return ["ok": true, "action": action]
         case "lockdownStarted":
-            let policyDomains = targetPolicyDomains()
+            let loadedState = try? StateStore.load()
+            var state = loadedState ?? .empty
+            let policyDomains = targetPolicyDomains(from: loadedState)
             try PolicyManager.applyProtection(policyDomains: policyDomains)
-            try StateStore.save(AppState(policyDomains: policyDomains))
+            state.selectedPolicyDomains = policyDomains
+            state.activePolicyDomains = policyDomains
+            try StateStore.save(state)
             return [
                 "ok": true,
                 "action": action,
                 "protected_browsers": policyDomains
             ]
         case "lockdownEnded":
-            let policyDomains = targetPolicyDomains()
+            var state = (try? StateStore.load()) ?? .empty
+            let policyDomains = cleanupPolicyDomains(from: state)
             try PolicyManager.removeProtection(policyDomains: policyDomains)
+            state.activePolicyDomains = []
+            try StateStore.save(state)
             return [
                 "ok": true,
                 "action": action,
@@ -49,15 +56,41 @@ struct AntirotNativeHost {
         }
     }
 
-    private static func targetPolicyDomains() -> [String] {
-        if let saved = try? StateStore.load() {
-            return saved.policyDomains
+    private static func targetPolicyDomains(from state: AppState?) -> [String] {
+        if let state {
+            return uniquePolicyDomains(state.selectedPolicyDomains)
         }
 
         let installed = BrowserPolicyTarget.knownTargets
             .filter(\.isInstalled)
             .map(\.policyDomain)
         return installed.isEmpty ? [BrowserPolicyTarget.knownTargets[0].policyDomain] : installed
+    }
+
+    private static func cleanupPolicyDomains(from state: AppState) -> [String] {
+        uniquePolicyDomains(
+            state.activePolicyDomains
+                + state.selectedPolicyDomains
+                + BrowserPolicyTarget.knownTargets.map(\.policyDomain)
+        )
+    }
+
+    private static func uniquePolicyDomains(_ policyDomains: [String]) -> [String] {
+        var seen = Set<String>()
+        return policyDomains.filter { domain in
+            guard isValidPolicyDomain(domain),
+                  !seen.contains(domain) else {
+                return false
+            }
+            seen.insert(domain)
+            return true
+        }
+    }
+
+    private static func isValidPolicyDomain(_ policyDomain: String) -> Bool {
+        let pattern = #"^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$"#
+        return policyDomain.range(of: pattern, options: .regularExpression) != nil
+            && policyDomain.contains(".")
     }
 }
 
@@ -151,9 +184,43 @@ struct BrowserPolicyTarget {
 }
 
 struct AppState: Codable, Equatable {
-    let policyDomains: [String]
+    var selectedPolicyDomains: [String]
+    var activePolicyDomains: [String]
 
-    static let empty = AppState(policyDomains: [])
+    static let empty = AppState(selectedPolicyDomains: [], activePolicyDomains: [])
+
+    init(selectedPolicyDomains: [String], activePolicyDomains: [String]) {
+        self.selectedPolicyDomains = selectedPolicyDomains
+        self.activePolicyDomains = activePolicyDomains
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyPolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .policyDomains
+        )
+        selectedPolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .selectedPolicyDomains
+        ) ?? legacyPolicyDomains ?? []
+        activePolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .activePolicyDomains
+        ) ?? legacyPolicyDomains ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(selectedPolicyDomains, forKey: .selectedPolicyDomains)
+        try container.encode(activePolicyDomains, forKey: .activePolicyDomains)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selectedPolicyDomains
+        case activePolicyDomains
+        case policyDomains
+    }
 }
 
 enum StateStore {
@@ -178,32 +245,46 @@ enum StateStore {
 
 enum PolicyManager {
     static func applyProtection(policyDomains: [String]) throws {
+        guard !policyDomains.isEmpty else { return }
         try runPrivilegedShell(makePolicyScript(action: "apply", policyDomains: policyDomains))
     }
 
     static func removeProtection(policyDomains: [String]) throws {
+        guard !policyDomains.isEmpty else { return }
         try runPrivilegedShell(makePolicyScript(action: "remove", policyDomains: policyDomains))
     }
 
     private static func makePolicyScript(action: String, policyDomains: [String]) -> String {
         let domains = policyDomains.joined(separator: " ")
+        let consoleUser = NSUserName().shellSingleQuoted
 
         return """
         #!/bin/sh
         set -eu
 
         ACTION='\(action)'
+        EXTENSION_ID='\(antiRotExtensionID)'
         POLICY_VALUE='\(antiRotPolicyValue)'
+        UPDATE_URL='\(chromeWebStoreUpdateURL)'
         POLICY_DIR='/Library/Managed Preferences'
+        CONSOLE_USER=\(consoleUser)
         DOMAINS='\(domains)'
 
         PLIST_BUDDY='/usr/libexec/PlistBuddy'
         PLUTIL='/usr/bin/plutil'
 
         mkdir -p "$POLICY_DIR"
+        if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+          USER_POLICY_DIR="$POLICY_DIR/$CONSOLE_USER"
+          mkdir -p "$USER_POLICY_DIR"
+        else
+          USER_POLICY_DIR=""
+        fi
 
         ensure_plist() {
           plist="$1"
+          mkdir -p "$(dirname "$plist")"
+
           if [ ! -f "$plist" ]; then
             "$PLUTIL" -create xml1 "$plist"
           fi
@@ -228,6 +309,17 @@ enum PolicyManager {
           if ! "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/grep -F "$POLICY_VALUE" >/dev/null 2>&1; then
             "$PLIST_BUDDY" -c "Add :ExtensionInstallForcelist: string $POLICY_VALUE" "$plist"
           fi
+
+          if ! "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Add :ExtensionSettings dict" "$plist"
+          fi
+
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Delete :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1 || true
+          fi
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID dict" "$plist"
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID:installation_mode string force_installed" "$plist"
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID:update_url string $UPDATE_URL" "$plist"
         }
 
         remove_policy() {
@@ -236,34 +328,47 @@ enum PolicyManager {
             return 0
           fi
 
-          if ! "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1; then
-            return 0
+          if "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1; then
+            count=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
+            i=$((count - 1))
+            while [ "$i" -ge 0 ]; do
+              item=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist:$i" "$plist" 2>/dev/null || true)
+              if [ "$item" = "$POLICY_VALUE" ]; then
+                "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist:$i" "$plist" >/dev/null 2>&1 || true
+              fi
+              i=$((i - 1))
+            done
+
+            remaining=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" 2>/dev/null | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
+            if [ "$remaining" -eq 0 ]; then
+              "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1 || true
+            fi
           fi
 
-          count=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
-          i=$((count - 1))
-          while [ "$i" -ge 0 ]; do
-            item=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist:$i" "$plist" 2>/dev/null || true)
-            if [ "$item" = "$POLICY_VALUE" ]; then
-              "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist:$i" "$plist" >/dev/null 2>&1 || true
-            fi
-            i=$((i - 1))
-          done
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Delete :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1 || true
+          fi
 
-          remaining=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" 2>/dev/null | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
-          if [ "$remaining" -eq 0 ]; then
-            "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1 || true
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" >/dev/null 2>&1; then
+            if ! "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" | /usr/bin/grep -q '^    '; then
+              "$PLIST_BUDDY" -c "Delete :ExtensionSettings" "$plist" >/dev/null 2>&1 || true
+            fi
           fi
         }
 
         for domain in $DOMAINS; do
-          plist="$POLICY_DIR/$domain.plist"
           case "$ACTION" in
             apply)
-              apply_policy "$plist"
+              apply_policy "$POLICY_DIR/$domain.plist"
+              if [ -n "$USER_POLICY_DIR" ]; then
+                apply_policy "$USER_POLICY_DIR/$domain.plist"
+              fi
               ;;
             remove)
-              remove_policy "$plist"
+              remove_policy "$POLICY_DIR/$domain.plist"
+              if [ -n "$USER_POLICY_DIR" ]; then
+                remove_policy "$USER_POLICY_DIR/$domain.plist"
+              fi
               ;;
             *)
               echo "Unknown action: $ACTION" >&2
@@ -335,5 +440,9 @@ private extension String {
     var appleScriptEscaped: String {
         replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    var shellSingleQuoted: String {
+        "'\(replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

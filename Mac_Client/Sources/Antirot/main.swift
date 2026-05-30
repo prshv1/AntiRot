@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var installedPolicyDomains: Set<String> = []
     @State private var savedState = AppState.empty
     @State private var statusText = "Ready."
+    @State private var startAtLoginEnabled = StartupManager.isEnabled
     @State private var isWorking = false
 
     private var availableTargets: [BrowserPolicyTarget] {
@@ -88,6 +89,20 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Toggle(isOn: Binding(
+                get: { startAtLoginEnabled },
+                set: { setStartAtLogin($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Open Antirot at login")
+                        .font(.headline)
+                    Text("Start the Mac app automatically when you sign in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(isWorking)
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("Browsers")
                     .font(.headline)
@@ -134,7 +149,7 @@ struct ContentView: View {
                 Button("Remove Protection") {
                     removeProtection()
                 }
-                .disabled(isWorking || installedPolicyDomains.isEmpty)
+                .disabled(isWorking || !canRemoveProtection)
 
                 Button("Refresh") {
                     refreshStatus()
@@ -154,6 +169,7 @@ struct ContentView: View {
         .padding(24)
         .onAppear {
             refreshStatus()
+            refreshStartupState()
             installBrowserLink()
         }
     }
@@ -219,7 +235,8 @@ struct ContentView: View {
                 }.value
 
                 let state = AppState(
-                    policyDomains: targets.map(\.policyDomain)
+                    selectedPolicyDomains: targets.map(\.policyDomain),
+                    activePolicyDomains: targets.map(\.policyDomain)
                 )
                 try StateStore.save(state)
 
@@ -239,17 +256,7 @@ struct ContentView: View {
     }
 
     private func removeProtection() {
-        let domains = installedPolicyDomains
-        let targets = domains.map { domain in
-            BrowserPolicyTarget.knownTarget(forPolicyDomain: domain, discoveredTargets: discoveredTargets)
-                ?? BrowserPolicyTarget(
-                    id: "installed-\(domain)",
-                    displayName: domain,
-                    policyDomain: domain,
-                    appPaths: [],
-                    isDetected: true
-                )
-        }
+        let targets = targets(forPolicyDomains: cleanupPolicyDomains())
 
         isWorking = true
         statusText = "Waiting for macOS admin approval..."
@@ -260,7 +267,12 @@ struct ContentView: View {
                     try PolicyManager.removeProtection(from: targets)
                 }.value
 
+                var state = savedState
+                state.activePolicyDomains = []
+                try StateStore.save(state)
+
                 await MainActor.run {
+                    savedState = state
                     refreshStatus()
                     statusText = "Protection was removed. Restart the browser if the extensions page still looks managed."
                     isWorking = false
@@ -284,16 +296,37 @@ struct ContentView: View {
             savedState = state
             selectedTargetIDs = Set(
                 availableTargets
-                    .filter { state.policyDomains.contains($0.policyDomain) }
+                    .filter { state.selectedPolicyDomains.contains($0.policyDomain) }
                     .map(\.id)
             )
         } else {
             saveSelectedBrowserChoices()
         }
 
-        let domains = availableTargets.map(\.policyDomain) + savedState.policyDomains
+        let domains = uniquePolicyDomains(
+            availableTargets.map(\.policyDomain)
+                + savedState.selectedPolicyDomains
+                + savedState.activePolicyDomains
+        )
 
         installedPolicyDomains = PolicyManager.installedPolicyDomains(policyDomains: domains)
+    }
+
+    private func refreshStartupState() {
+        startAtLoginEnabled = StartupManager.isEnabled
+    }
+
+    private func setStartAtLogin(_ enabled: Bool) {
+        do {
+            try StartupManager.setEnabled(enabled)
+            startAtLoginEnabled = enabled
+            statusText = enabled
+                ? "Antirot will open when you log in."
+                : "Antirot will not open automatically."
+        } catch {
+            refreshStartupState()
+            statusText = "Could not update startup setting: \(error.localizedDescription)"
+        }
     }
 
     private func installBrowserLink() {
@@ -306,10 +339,37 @@ struct ContentView: View {
     }
 
     private func saveSelectedBrowserChoices() {
-        let policyDomains = selectedTargets.map(\.policyDomain)
-        let state = AppState(policyDomains: policyDomains)
+        var state = savedState
+        state.selectedPolicyDomains = selectedTargets.map(\.policyDomain)
         try? StateStore.save(state)
         savedState = state
+    }
+
+    private var canRemoveProtection: Bool {
+        !installedPolicyDomains.isEmpty || !savedState.activePolicyDomains.isEmpty
+    }
+
+    private func cleanupPolicyDomains() -> [String] {
+        uniquePolicyDomains(
+            BrowserPolicyTarget.all.map(\.policyDomain)
+                + discoveredTargets.map(\.policyDomain)
+                + savedState.selectedPolicyDomains
+                + savedState.activePolicyDomains
+                + Array(installedPolicyDomains)
+        )
+    }
+
+    private func targets(forPolicyDomains policyDomains: [String]) -> [BrowserPolicyTarget] {
+        policyDomains.map { domain in
+            BrowserPolicyTarget.knownTarget(forPolicyDomain: domain, discoveredTargets: discoveredTargets)
+                ?? BrowserPolicyTarget(
+                    id: "installed-\(domain)",
+                    displayName: domain,
+                    policyDomain: domain,
+                    appPaths: [],
+                    isDetected: true
+                )
+        }
     }
 
     private var appIconImage: NSImage {
@@ -327,6 +387,18 @@ struct ContentView: View {
                 return false
             }
             seen.insert(target.policyDomain)
+            return true
+        }
+    }
+
+    private func uniquePolicyDomains(_ policyDomains: [String]) -> [String] {
+        var seen = Set<String>()
+        return policyDomains.filter { domain in
+            guard BrowserPolicyTarget.isValidPolicyDomain(domain),
+                  !seen.contains(domain) else {
+                return false
+            }
+            seen.insert(domain)
             return true
         }
     }
@@ -434,9 +506,43 @@ struct BrowserPolicyTarget: Identifiable, Hashable {
 }
 
 struct AppState: Codable, Equatable {
-    let policyDomains: [String]
+    var selectedPolicyDomains: [String]
+    var activePolicyDomains: [String]
 
-    static let empty = AppState(policyDomains: [])
+    static let empty = AppState(selectedPolicyDomains: [], activePolicyDomains: [])
+
+    init(selectedPolicyDomains: [String], activePolicyDomains: [String]) {
+        self.selectedPolicyDomains = selectedPolicyDomains
+        self.activePolicyDomains = activePolicyDomains
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyPolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .policyDomains
+        )
+        selectedPolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .selectedPolicyDomains
+        ) ?? legacyPolicyDomains ?? []
+        activePolicyDomains = try container.decodeIfPresent(
+            [String].self,
+            forKey: .activePolicyDomains
+        ) ?? legacyPolicyDomains ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selectedPolicyDomains
+        case activePolicyDomains
+        case policyDomains
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(selectedPolicyDomains, forKey: .selectedPolicyDomains)
+        try container.encode(activePolicyDomains, forKey: .activePolicyDomains)
+    }
 }
 
 enum BrowserDiscovery {
@@ -631,6 +737,72 @@ enum BrowserDiscovery {
     }
 }
 
+enum StartupManager {
+    private static let label = "in.antirot.app"
+
+    private static var launchAgentURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+            .appendingPathComponent("\(label).plist")
+    }
+
+    static var isEnabled: Bool {
+        FileManager.default.fileExists(atPath: launchAgentURL.path)
+    }
+
+    static func setEnabled(_ enabled: Bool) throws {
+        if enabled {
+            try installLaunchAgent()
+        } else {
+            try removeLaunchAgent()
+        }
+    }
+
+    private static func installLaunchAgent() throws {
+        guard let executableURL = Bundle.main.executableURL else {
+            throw StartupManagerError.missingExecutablePath
+        }
+
+        let launchAgentsDirectory = launchAgentURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: launchAgentsDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [executableURL.path],
+            "RunAtLoad": true,
+            "KeepAlive": false,
+            "ProcessType": "Interactive"
+        ]
+
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .xml,
+            options: 0
+        )
+        try data.write(to: launchAgentURL, options: .atomic)
+    }
+
+    private static func removeLaunchAgent() throws {
+        if FileManager.default.fileExists(atPath: launchAgentURL.path) {
+            try FileManager.default.removeItem(at: launchAgentURL)
+        }
+    }
+}
+
+enum StartupManagerError: LocalizedError {
+    case missingExecutablePath
+
+    var errorDescription: String? {
+        switch self {
+        case .missingExecutablePath:
+            return "Could not find the app executable path."
+        }
+    }
+}
+
 enum NativeMessagingInstaller {
     private static let manifestFileName = "\(nativeHostName).json"
 
@@ -728,16 +900,41 @@ enum PolicyManager {
 
     static func installedPolicyDomains(policyDomains: [String]) -> Set<String> {
         Set(policyDomains.compactMap { policyDomain in
-            let url = policyDirectory.appendingPathComponent("\(policyDomain).plist")
-            guard let data = try? Data(contentsOf: url),
-                  let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-                  let dictionary = plist as? [String: Any],
-                  let forceList = dictionary["ExtensionInstallForcelist"] as? [String],
-                  forceList.contains(antiRotPolicyValue) else {
-                return nil
-            }
-            return policyDomain
+            policyFileURLs(for: policyDomain).contains { url in
+                guard let data = try? Data(contentsOf: url),
+                      let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+                      let dictionary = plist as? [String: Any] else {
+                    return false
+                }
+
+                if let forceList = dictionary["ExtensionInstallForcelist"] as? [String],
+                   forceList.contains(antiRotPolicyValue) {
+                    return true
+                }
+
+                guard let extensionSettings = dictionary["ExtensionSettings"] as? [String: Any],
+                      let antiRotSettings = extensionSettings[antiRotExtensionID] as? [String: Any],
+                      let installationMode = antiRotSettings["installation_mode"] as? String else {
+                    return false
+                }
+                return installationMode == "force_installed"
+            } ? policyDomain : nil
         })
+    }
+
+    private static func policyFileURLs(for policyDomain: String) -> [URL] {
+        var urls = [
+            policyDirectory.appendingPathComponent("\(policyDomain).plist")
+        ]
+        let userName = NSUserName()
+        if !userName.isEmpty && userName != "root" {
+            urls.append(
+                policyDirectory
+                    .appendingPathComponent(userName, isDirectory: true)
+                    .appendingPathComponent("\(policyDomain).plist")
+            )
+        }
+        return urls
     }
 
     static func applyProtection(to targets: [BrowserPolicyTarget]) throws {
@@ -750,23 +947,35 @@ enum PolicyManager {
 
     private static func makePolicyScript(action: String, targets: [BrowserPolicyTarget]) -> String {
         let domains = targets.map(\.policyDomain).joined(separator: " ")
+        let consoleUser = NSUserName().shellSingleQuoted
 
         return """
         #!/bin/sh
         set -eu
 
         ACTION='\(action)'
+        EXTENSION_ID='\(antiRotExtensionID)'
         POLICY_VALUE='\(antiRotPolicyValue)'
+        UPDATE_URL='\(chromeWebStoreUpdateURL)'
         POLICY_DIR='/Library/Managed Preferences'
+        CONSOLE_USER=\(consoleUser)
         DOMAINS='\(domains)'
 
         PLIST_BUDDY='/usr/libexec/PlistBuddy'
         PLUTIL='/usr/bin/plutil'
 
         mkdir -p "$POLICY_DIR"
+        if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+          USER_POLICY_DIR="$POLICY_DIR/$CONSOLE_USER"
+          mkdir -p "$USER_POLICY_DIR"
+        else
+          USER_POLICY_DIR=""
+        fi
 
         ensure_plist() {
           plist="$1"
+          mkdir -p "$(dirname "$plist")"
+
           if [ ! -f "$plist" ]; then
             "$PLUTIL" -create xml1 "$plist"
           fi
@@ -791,6 +1000,17 @@ enum PolicyManager {
           if ! "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/grep -F "$POLICY_VALUE" >/dev/null 2>&1; then
             "$PLIST_BUDDY" -c "Add :ExtensionInstallForcelist: string $POLICY_VALUE" "$plist"
           fi
+
+          if ! "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Add :ExtensionSettings dict" "$plist"
+          fi
+
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Delete :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1 || true
+          fi
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID dict" "$plist"
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID:installation_mode string force_installed" "$plist"
+          "$PLIST_BUDDY" -c "Add :ExtensionSettings:$EXTENSION_ID:update_url string $UPDATE_URL" "$plist"
         }
 
         remove_policy() {
@@ -799,34 +1019,47 @@ enum PolicyManager {
             return 0
           fi
 
-          if ! "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1; then
-            return 0
+          if "$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1; then
+            count=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
+            i=$((count - 1))
+            while [ "$i" -ge 0 ]; do
+              item=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist:$i" "$plist" 2>/dev/null || true)
+              if [ "$item" = "$POLICY_VALUE" ]; then
+                "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist:$i" "$plist" >/dev/null 2>&1 || true
+              fi
+              i=$((i - 1))
+            done
+
+            remaining=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" 2>/dev/null | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
+            if [ "$remaining" -eq 0 ]; then
+              "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1 || true
+            fi
           fi
 
-          count=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
-          i=$((count - 1))
-          while [ "$i" -ge 0 ]; do
-            item=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist:$i" "$plist" 2>/dev/null || true)
-            if [ "$item" = "$POLICY_VALUE" ]; then
-              "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist:$i" "$plist" >/dev/null 2>&1 || true
-            fi
-            i=$((i - 1))
-          done
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1; then
+            "$PLIST_BUDDY" -c "Delete :ExtensionSettings:$EXTENSION_ID" "$plist" >/dev/null 2>&1 || true
+          fi
 
-          remaining=$("$PLIST_BUDDY" -c "Print :ExtensionInstallForcelist" "$plist" 2>/dev/null | /usr/bin/awk '/^    / { c++ } END { print c + 0 }')
-          if [ "$remaining" -eq 0 ]; then
-            "$PLIST_BUDDY" -c "Delete :ExtensionInstallForcelist" "$plist" >/dev/null 2>&1 || true
+          if "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" >/dev/null 2>&1; then
+            if ! "$PLIST_BUDDY" -c "Print :ExtensionSettings" "$plist" | /usr/bin/grep -q '^    '; then
+              "$PLIST_BUDDY" -c "Delete :ExtensionSettings" "$plist" >/dev/null 2>&1 || true
+            fi
           fi
         }
 
         for domain in $DOMAINS; do
-          plist="$POLICY_DIR/$domain.plist"
           case "$ACTION" in
             apply)
-              apply_policy "$plist"
+              apply_policy "$POLICY_DIR/$domain.plist"
+              if [ -n "$USER_POLICY_DIR" ]; then
+                apply_policy "$USER_POLICY_DIR/$domain.plist"
+              fi
               ;;
             remove)
-              remove_policy "$plist"
+              remove_policy "$POLICY_DIR/$domain.plist"
+              if [ -n "$USER_POLICY_DIR" ]; then
+                remove_policy "$USER_POLICY_DIR/$domain.plist"
+              fi
               ;;
             *)
               echo "Unknown action: $ACTION" >&2
@@ -891,5 +1124,9 @@ private extension String {
     var appleScriptEscaped: String {
         replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    var shellSingleQuoted: String {
+        "'\(replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

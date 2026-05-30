@@ -37,6 +37,7 @@ const DEFAULT_COLLAPSED_SECTIONS = {
 };
 const LOCKDOWN_KEY = 'lockdown';
 const LOCKDOWN_SNAPSHOT_KEY = 'lockdownSnapshot';
+const LOCKDOWN_ALARM_NAME = 'antirot-lockdown-expiry';
 const MAX_LOCKDOWN_MINUTES = 24 * 60;
 const PROTECTED_SETTINGS_KEYS = [
   'enabled',
@@ -117,6 +118,7 @@ async function handleStartLockdown(durationMinutes, sendResponse) {
       [LOCKDOWN_KEY]: lockdown,
       [LOCKDOWN_SNAPSHOT_KEY]: snapshot,
     });
+    scheduleLockdownExpiry(lockdown);
 
     notifyYoutubeTabs({ action: 'toggleChanged', enabled: true });
     notifyYoutubeTabs({ action: 'focusSettingsChanged', settings: snapshot.focusSettings });
@@ -190,12 +192,14 @@ async function getActiveLockdownState() {
   const lockdown = normalizeLockdown(data[LOCKDOWN_KEY]);
 
   if (!lockdown) {
+    clearLockdownExpiry();
     return { active: false, lockdown: null, snapshot: null, remainingMs: 0 };
   }
 
   const remainingMs = getRemainingLockdownMs(lockdown);
   if (remainingMs <= 0) {
     await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+    clearLockdownExpiry();
     const nativeProtection = await syncNativeLockdown('lockdownEnded', lockdown);
     if (!nativeProtection.ok) {
       console.warn('[AntiRot] Mac lockdown protection was not removed:', nativeProtection.error);
@@ -203,6 +207,7 @@ async function getActiveLockdownState() {
     return { active: false, lockdown: null, snapshot: null, remainingMs: 0 };
   }
 
+  scheduleLockdownExpiry(lockdown);
   return {
     active: true,
     lockdown,
@@ -428,6 +433,28 @@ function removeStorage(keys) {
   });
 }
 
+function scheduleLockdownExpiry(lockdown) {
+  if (!chrome.alarms?.create) return;
+
+  const remainingMs = getRemainingLockdownMs(lockdown);
+  if (remainingMs <= 0) {
+    clearLockdownExpiry();
+    return;
+  }
+
+  chrome.alarms.create(LOCKDOWN_ALARM_NAME, {
+    when: Date.now() + remainingMs + 1000,
+  });
+}
+
+function clearLockdownExpiry() {
+  if (!chrome.alarms?.clear) return;
+
+  chrome.alarms.clear(LOCKDOWN_ALARM_NAME, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
 function syncNativeLockdown(action, lockdown = null) {
   return new Promise((resolve) => {
     if (!chrome.runtime?.sendNativeMessage) {
@@ -584,6 +611,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         : {}),
     });
     await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+    clearLockdownExpiry();
   } else {
     await setStorage({
       ...(installCredentials
@@ -620,6 +648,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
     if (!lockdownSnapshot) {
       await removeStorage([LOCKDOWN_KEY, LOCKDOWN_SNAPSHOT_KEY]);
+      clearLockdownExpiry();
+    } else {
+      scheduleLockdownExpiry(existingLockdown);
     }
   }
 
@@ -631,3 +662,13 @@ chrome.runtime.onStartup.addListener(() => {
     console.warn('[AntiRot] Lockdown startup check failed:', err);
   });
 });
+
+if (chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== LOCKDOWN_ALARM_NAME) return;
+
+    getActiveLockdownState().catch((err) => {
+      console.warn('[AntiRot] Lockdown expiry check failed:', err);
+    });
+  });
+}
