@@ -152,6 +152,11 @@ struct ContentView: View {
                 }
                 .disabled(isWorking || !canRemoveProtection)
 
+                Button("Emergency Unlock") {
+                    emergencyUnlock()
+                }
+                .disabled(isWorking)
+
                 Button("Repair Sync") {
                     repairSyncWithExtensionState()
                 }
@@ -181,7 +186,6 @@ struct ContentView: View {
             refreshStatus()
             refreshStartupState()
             installBrowserLink()
-            repairSyncWithExtensionState()
         }
     }
 
@@ -291,6 +295,38 @@ struct ContentView: View {
             } catch {
                 await MainActor.run {
                     statusText = "Could not remove protection: \(error.localizedDescription)"
+                    isWorking = false
+                }
+            }
+        }
+    }
+
+    private func emergencyUnlock() {
+        let targets = targets(forPolicyDomains: cleanupPolicyDomains())
+
+        isWorking = true
+        statusText = "Unlocking every Antirot browser policy..."
+
+        Task {
+            do {
+                try await Task.detached {
+                    try PolicyManager.removeProtection(from: targets)
+                }.value
+
+                let state = AppState.empty
+                try StateStore.save(state)
+
+                await MainActor.run {
+                    savedState = state
+                    selectedTargetIDs = []
+                    detectedLockdownDomains = []
+                    refreshStatus()
+                    statusText = "Emergency unlock complete. Restart Chrome or Helium if the page still looks managed."
+                    isWorking = false
+                }
+            } catch {
+                await MainActor.run {
+                    statusText = "Could not unlock: \(error.localizedDescription)"
                     isWorking = false
                 }
             }
