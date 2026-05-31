@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var selectedTargetIDs = Set(BrowserPolicyTarget.defaultTargets.map(\.id))
     @State private var discoveredTargets: [BrowserPolicyTarget] = []
     @State private var installedPolicyDomains: Set<String> = []
+    @State private var detectedLockdownDomains: Set<String> = []
     @State private var savedState = AppState.empty
     @State private var statusText = "Ready."
     @State private var startAtLoginEnabled = StartupManager.isEnabled
@@ -151,6 +152,11 @@ struct ContentView: View {
                 }
                 .disabled(isWorking || !canRemoveProtection)
 
+                Button("Repair Sync") {
+                    repairSyncWithExtensionState()
+                }
+                .disabled(isWorking)
+
                 Button("Refresh") {
                     refreshStatus()
                 }
@@ -161,6 +167,10 @@ struct ContentView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Label(policyStatusText, systemImage: installedPolicyDomains.isEmpty ? "lock.open" : "lock.shield")
+                if !detectedLockdownDomains.isEmpty {
+                    Label(lockdownDetectionText, systemImage: "bolt.shield")
+                        .foregroundStyle(.secondary)
+                }
                 Text(statusText)
                     .foregroundStyle(.secondary)
             }
@@ -171,6 +181,7 @@ struct ContentView: View {
             refreshStatus()
             refreshStartupState()
             installBrowserLink()
+            repairSyncWithExtensionState()
         }
     }
 
@@ -291,6 +302,7 @@ struct ContentView: View {
             excluding: Set(BrowserPolicyTarget.all.map(\.policyDomain))
         )
         discoveredTargets = detected
+        detectedLockdownDomains = ExtensionLockdownScanner.activeLockdownDomains(for: availableTargets)
 
         if let state = try? StateStore.load() {
             savedState = state
@@ -345,8 +357,84 @@ struct ContentView: View {
         savedState = state
     }
 
+    private func repairSyncWithExtensionState() {
+        let available = availableTargets
+        let selectedDomains = Set(selectedTargets.map(\.policyDomain))
+        let detectedDomains = ExtensionLockdownScanner.activeLockdownDomains(for: available)
+        let desiredDomains = detectedDomains.intersection(selectedDomains)
+        let currentActiveDomains = Set(savedState.activePolicyDomains)
+
+        detectedLockdownDomains = detectedDomains
+
+        let needsApply = !desiredDomains.isEmpty
+            && (!desiredDomains.isSubset(of: installedPolicyDomains) || currentActiveDomains != desiredDomains)
+        let needsRemove = desiredDomains.isEmpty
+            && (!installedPolicyDomains.isEmpty || !currentActiveDomains.isEmpty)
+
+        guard needsApply || needsRemove else {
+            if detectedDomains.subtracting(selectedDomains).isEmpty {
+                statusText = detectedDomains.isEmpty
+                    ? "No active extension lockdown found."
+                    : "Mac protection already matches extension lockdown."
+            } else {
+                statusText = "Lockdown was found in a browser that is not selected in Antirot."
+            }
+            return
+        }
+
+        let activeTargets = targets(forPolicyDomains: Array(desiredDomains))
+        let cleanupTargets = targets(forPolicyDomains: cleanupPolicyDomains())
+
+        isWorking = true
+        statusText = "Repairing browser protection..."
+
+        Task {
+            do {
+                try await Task.detached {
+                    try PolicyManager.syncProtection(
+                        activeTargets: activeTargets,
+                        cleanupTargets: cleanupTargets
+                    )
+                }.value
+
+                var state = savedState
+                state.activePolicyDomains = Array(desiredDomains).sorted()
+                try StateStore.save(state)
+
+                await MainActor.run {
+                    savedState = state
+                    refreshStatus()
+                    if detectedDomains.subtracting(selectedDomains).isEmpty {
+                        statusText = desiredDomains.isEmpty
+                            ? "Protection was repaired. No active lockdown is selected right now."
+                            : "Protection now matches extension lockdown."
+                    } else {
+                        statusText = "Protection was repaired. A lockdown was also found in an unselected browser."
+                    }
+                    isWorking = false
+                }
+            } catch {
+                await MainActor.run {
+                    statusText = "Could not repair protection: \(error.localizedDescription)"
+                    isWorking = false
+                }
+            }
+        }
+    }
+
     private var canRemoveProtection: Bool {
         !installedPolicyDomains.isEmpty || !savedState.activePolicyDomains.isEmpty
+    }
+
+    private var lockdownDetectionText: String {
+        let names = availableTargets
+            .filter { detectedLockdownDomains.contains($0.policyDomain) }
+            .map(\.displayName)
+        let knownDomains = Set(availableTargets.map(\.policyDomain))
+        let otherNames = detectedLockdownDomains
+            .subtracting(knownDomains)
+            .sorted()
+        return "Extension lockdown found in \((names + otherNames).joined(separator: ", "))."
     }
 
     private func cleanupPolicyDomains() -> [String] {
@@ -737,6 +825,128 @@ enum BrowserDiscovery {
     }
 }
 
+enum ExtensionLockdownScanner {
+    static func activeLockdownDomains(for targets: [BrowserPolicyTarget]) -> Set<String> {
+        Set(targets.compactMap { target in
+            hasActiveLockdown(in: target) ? target.policyDomain : nil
+        })
+    }
+
+    private static func hasActiveLockdown(in target: BrowserPolicyTarget) -> Bool {
+        browserDataRoots(for: target).contains { root in
+            profileDirectories(in: root).contains { profileURL in
+                let extensionURL = profileURL
+                    .appendingPathComponent("Local Extension Settings", isDirectory: true)
+                    .appendingPathComponent(antiRotExtensionID, isDirectory: true)
+                return hasActiveLockdown(inExtensionStorage: extensionURL)
+            }
+        }
+    }
+
+    private static func browserDataRoots(for target: BrowserPolicyTarget) -> [URL] {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let relativePaths: [String]
+
+        switch target.policyDomain {
+        case "com.google.Chrome":
+            relativePaths = ["Google/Chrome"]
+        case "com.brave.Browser":
+            relativePaths = ["BraveSoftware/Brave-Browser"]
+        case "com.microsoft.Edge":
+            relativePaths = ["Microsoft Edge"]
+        case "org.chromium.Chromium":
+            relativePaths = ["Chromium"]
+        case "com.vivaldi.Vivaldi":
+            relativePaths = ["Vivaldi"]
+        case "com.operasoftware.Opera":
+            relativePaths = ["com.operasoftware.Opera"]
+        case "com.operasoftware.OperaGX":
+            relativePaths = ["com.operasoftware.OperaGX"]
+        case "net.imput.helium":
+            relativePaths = ["net.imput.helium"]
+        case "company.thebrowser.Browser":
+            relativePaths = ["Arc/User Data"]
+        default:
+            relativePaths = [target.policyDomain]
+        }
+
+        return relativePaths.map {
+            appSupport.appendingPathComponent($0, isDirectory: true)
+        }
+    }
+
+    private static func profileDirectories(in root: URL) -> [URL] {
+        var profiles = [root]
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return profiles
+        }
+
+        profiles.append(contentsOf: contents.filter { url in
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                return false
+            }
+            return FileManager.default.fileExists(
+                atPath: url.appendingPathComponent("Local Extension Settings", isDirectory: true).path
+            )
+        })
+        return profiles
+    }
+
+    private static func hasActiveLockdown(inExtensionStorage extensionURL: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: extensionURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        return contents
+            .filter { ["log", "ldb"].contains($0.pathExtension.lowercased()) }
+            .sorted { left, right in
+                let leftDate = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
+                let rightDate = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
+                return leftDate > rightDate
+            }
+            .contains { fileURL in
+                guard let data = try? Data(contentsOf: fileURL) else {
+                    return false
+                }
+                return containsActiveLockdown(in: data)
+            }
+    }
+
+    private static func containsActiveLockdown(in data: Data) -> Bool {
+        let text = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1)
+            ?? ""
+        guard text.contains("activeUntil") else {
+            return false
+        }
+
+        let pattern = #""activeUntil"\s*:\s*([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return false
+        }
+
+        let now = Date().timeIntervalSince1970 * 1000
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: range).contains { match in
+            guard let valueRange = Range(match.range(at: 1), in: text),
+                  let activeUntil = Double(text[valueRange]) else {
+                return false
+            }
+            return activeUntil > now
+        }
+    }
+}
+
 enum StartupManager {
     private static let label = "in.antirot.app"
 
@@ -945,8 +1155,26 @@ enum PolicyManager {
         try runPrivilegedShell(makePolicyScript(action: "remove", targets: targets))
     }
 
-    private static func makePolicyScript(action: String, targets: [BrowserPolicyTarget]) -> String {
+    static func syncProtection(
+        activeTargets: [BrowserPolicyTarget],
+        cleanupTargets: [BrowserPolicyTarget]
+    ) throws {
+        try runPrivilegedShell(
+            makePolicyScript(
+                action: "sync",
+                targets: cleanupTargets,
+                activeTargets: activeTargets
+            )
+        )
+    }
+
+    private static func makePolicyScript(
+        action: String,
+        targets: [BrowserPolicyTarget],
+        activeTargets: [BrowserPolicyTarget] = []
+    ) -> String {
         let domains = targets.map(\.policyDomain).joined(separator: " ")
+        let activeDomains = activeTargets.map(\.policyDomain).joined(separator: " ")
         let consoleUser = NSUserName().shellSingleQuoted
 
         return """
@@ -960,6 +1188,7 @@ enum PolicyManager {
         POLICY_DIR='/Library/Managed Preferences'
         CONSOLE_USER=\(consoleUser)
         DOMAINS='\(domains)'
+        ACTIVE_DOMAINS='\(activeDomains)'
 
         PLIST_BUDDY='/usr/libexec/PlistBuddy'
         PLUTIL='/usr/bin/plutil'
@@ -1047,26 +1276,46 @@ enum PolicyManager {
           fi
         }
 
-        for domain in $DOMAINS; do
-          case "$ACTION" in
-            apply)
-              apply_policy "$POLICY_DIR/$domain.plist"
-              if [ -n "$USER_POLICY_DIR" ]; then
-                apply_policy "$USER_POLICY_DIR/$domain.plist"
-              fi
-              ;;
-            remove)
-              remove_policy "$POLICY_DIR/$domain.plist"
-              if [ -n "$USER_POLICY_DIR" ]; then
-                remove_policy "$USER_POLICY_DIR/$domain.plist"
-              fi
-              ;;
-            *)
-              echo "Unknown action: $ACTION" >&2
-              exit 2
-              ;;
-          esac
-        done
+        apply_domain() {
+          domain="$1"
+          apply_policy "$POLICY_DIR/$domain.plist"
+          if [ -n "$USER_POLICY_DIR" ]; then
+            apply_policy "$USER_POLICY_DIR/$domain.plist"
+          fi
+        }
+
+        remove_domain() {
+          domain="$1"
+          remove_policy "$POLICY_DIR/$domain.plist"
+          if [ -n "$USER_POLICY_DIR" ]; then
+            remove_policy "$USER_POLICY_DIR/$domain.plist"
+          fi
+        }
+
+        case "$ACTION" in
+          apply)
+            for domain in $DOMAINS; do
+              apply_domain "$domain"
+            done
+            ;;
+          remove)
+            for domain in $DOMAINS; do
+              remove_domain "$domain"
+            done
+            ;;
+          sync)
+            for domain in $DOMAINS; do
+              remove_domain "$domain"
+            done
+            for domain in $ACTIVE_DOMAINS; do
+              apply_domain "$domain"
+            done
+            ;;
+          *)
+            echo "Unknown action: $ACTION" >&2
+            exit 2
+            ;;
+        esac
 
         /usr/bin/killall cfprefsd >/dev/null 2>&1 || true
         echo "Antirot policy $ACTION complete."
